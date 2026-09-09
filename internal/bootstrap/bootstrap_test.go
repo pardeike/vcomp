@@ -124,6 +124,43 @@ func TestInitRejectsIncompleteSettings(t *testing.T) {
 	}
 }
 
+// Changing the goal after the company exists has to reach the CEO, who is the
+// only one ever told it. Before this, an edited goal was silently ignored.
+func TestSyncGoalReachesTheCEOAfterTheFact(t *testing.T) {
+	hermetic(t)
+	root := t.TempDir()
+	cfg := settings("build a tiny maze game")
+	if err := Init(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	goalPath := filepath.Join(root, "spaces", "ceo", "goal.md")
+
+	// An unchanged goal must not touch the file.
+	if changed, err := SyncGoal(root, cfg); err != nil || changed {
+		t.Fatalf("SyncGoal on an unchanged goal = %v, %v; want false, nil", changed, err)
+	}
+
+	cfg.Goal = "build a classical text adventure with a memorable ending"
+	changed, err := SyncGoal(root, cfg)
+	if err != nil || !changed {
+		t.Fatalf("SyncGoal on a changed goal = %v, %v; want true, nil", changed, err)
+	}
+	b, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "memorable ending") {
+		t.Errorf("the new goal did not reach the CEO:\n%s", b)
+	}
+	if strings.Contains(string(b), "maze") {
+		t.Errorf("the old goal is still there:\n%s", b)
+	}
+	// And it is still a rendered document, not a bare line.
+	if strings.Contains(string(b), "{{") || !strings.Contains(string(b), "RESULT.md") {
+		t.Errorf("goal.md was not rendered from the template:\n%s", b)
+	}
+}
+
 func TestTemplatesResolveLocalThenGlobalThenBuiltIn(t *testing.T) {
 	home := hermetic(t)
 	root := t.TempDir()

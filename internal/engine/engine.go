@@ -409,6 +409,9 @@ func copyTree(src, dst string) error {
 	})
 }
 
+// ResultFile is the name of the file whose existence ends the simulation.
+func (e *Engine) ResultFile() string { return e.cfg.ResultFile }
+
 // Session names the tmux session a role runs in.
 func (e *Engine) Session(role string) string { return e.cfg.SessionPrefix + "-" + role }
 

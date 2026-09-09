@@ -223,14 +223,22 @@ func setupCompany(root string) error {
 		fmt.Printf("\n%d settings written to %s\n", len(overrides), dest)
 	}
 
-	if exists {
-		fmt.Println("company already exists; nothing else to do")
-		return nil
-	}
 	if cfg, err = config.Load(root); err != nil {
 		return err
 	}
 	cfg.Goal = goal
+	if exists {
+		changed, err := bootstrap.SyncGoal(root, cfg)
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Println("the CEO has been given the new goal")
+		} else {
+			fmt.Println("company already exists; nothing else to do")
+		}
+		return nil
+	}
 	if err := bootstrap.Init(root, cfg); err != nil {
 		return err
 	}
@@ -299,6 +307,26 @@ func runEngine(root string) error {
 		return err
 	}
 	defer e.Close()
+
+	// A result file that is already here was not written by this run's CEO, so
+	// this company is finished rather than finishing.
+	if result, done := e.Result(); done {
+		fmt.Printf("%s already exists, so this company is already finished:\n\n%s\n\n",
+			e.ResultFile(), strings.TrimSpace(result))
+		return fmt.Errorf("remove %s to let this company carry on, or start a fresh one in another directory",
+			filepath.Join(root, e.ResultFile()))
+	}
+
+	// A goal edited since the company was created has to reach the CEO.
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	if changed, err := bootstrap.SyncGoal(root, cfg); err != nil {
+		return err
+	} else if changed {
+		fmt.Println("the goal changed since this company was created; the CEO has been told")
+	}
 
 	stop := make(chan struct{})
 	sig := make(chan os.Signal, 1)

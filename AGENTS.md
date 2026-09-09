@@ -268,6 +268,11 @@ changed something you are unsure about, not after every edit - the engine suite
 drives real tmux and takes about 17 seconds, so wasteful runs are genuinely
 wasteful.
 
+Finish each piece of work by committing it and then running `./install.sh`. The
+installed binary is what gets used from a company directory, so a commit that is
+not deployed means the next test run exercises the previous version - which is
+its own species of confusing bug.
+
 ## Testing
 
 Tests run the real tmux and a fake harness — a shell script that records how it

@@ -225,6 +225,29 @@ func Init(root string, cfg config.Config) error {
 	return initProduct(set, filepath.Join(root, space.ProductDir))
 }
 
+// SyncGoal rewrites the CEO's goal.md when the configured goal no longer
+// matches it, so that changing "goal =" actually reaches the only person who is
+// ever told it. Without this the goal is frozen at creation and a later edit is
+// silently ignored.
+func SyncGoal(root string, cfg config.Config) (bool, error) {
+	goal := strings.TrimSpace(cfg.Goal)
+	if goal == "" {
+		return false, nil
+	}
+	p := filepath.Join(root, space.SpacesDir, "ceo", "goal.md")
+	if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), goal) {
+		return false, nil
+	}
+	doc, err := Load(root).Text("goal.md", map[string]string{
+		"GOAL":   goal,
+		"RESULT": cfg.ResultFile,
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(p, []byte(doc), 0o644)
+}
+
 // initProduct makes the artifact a real git repo with one commit, so that
 // "read the diff since last time" works from the very first tick.
 func initProduct(set Set, dir string) error {
