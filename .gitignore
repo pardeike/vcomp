@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Built binaries
+/vcomp
+/dist/
+
+# Go test and profiling output
+*.test
+*.out
+*.prof
+
+# A company created inside the checkout, e.g. "vcomp run -root .".
+# These are simulation data, never source. The shipped templates they are
+# rendered from live in internal/bootstrap/templates/.
+/.vcomp/
+/spaces/
+/public/
+/product/
+/CONVENTIONS.md
+/RESULT.md

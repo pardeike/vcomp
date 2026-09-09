@@ -1,0 +1,227 @@
+# vcomp — a virtual company simulation
+
+`vcomp` runs a small company of AI agents. Each employee is a real CLI coding
+agent (`claude`, `codex`, …) living in its own tmux session, its own folder, and
+its own head. They coordinate **only through the filesystem** — no message bus,
+no RPC, no shared memory.
+
+Two rules shape the whole design:
+
+- **The engine is dumb.** Its job is to keep everyone busy: start sessions, keep
+  them alive, prod the motionless ones, and stop when it is told to. It has no
+  opinion about the work, the people, or the product.
+- **The behaviour lives in the prompts.** How a role thinks, speaks, decides,
+  and fills an empty hour is written in that role's own `role.md`, not in Go.
+  Whether this company works well is a property of those documents, and they are
+  meant to be rewritten and tuned.
+
+There are no constants in the code. Every timing, command line, model, effort,
+prompt, and document is a setting or a template.
+
+## Layout
+
+```
+company_root/
+  CONVENTIONS.md          the shared protocol; every role is told to read it
+  RESULT.md               written by the CEO; its existence ends the simulation
+  spaces/                 one folder per employee
+    ceo/
+      role.md             identity, remit, behaviour  (the engine watches this file)
+      goal.md             the goal (only the CEO is pointed at it)
+      notes.md            their internal monologue, by convention
+      goals.md            what they are personally trying to achieve
+      inbox/<topic>/message.md
+    developer-1/ art-director/ tester/ hr/ …
+  product/                the artifact under construction — a git repo
+  public/                 user-test runs
+    run-0001/
+      role.md             written by the engine: the throwaway user
+      instructions.md     optional, from whoever asked for the test
+      product/            snapshot of product/ at run start, without .git
+      version.txt         the commit the snapshot came from
+      impressions.md      written by the user; its existence ends the run
+  .vcomp/
+    vcomp.conf            this company's settings — usually a few lines
+    templates/            this company's template overrides (optional)
+    state.json engine.log engine bookkeeping
+```
+
+Nothing is secret. Every role may read every space, every public run, and the
+product repo. The goal is "known only to the CEO" by *convention*: it lives in
+`spaces/ceo/goal.md`, and only the CEO's `role.md` mentions it. Nobody is
+prevented from looking — they are just never told to.
+
+## Settings
+
+Three layers, each overriding the one before:
+
+1. **built-in defaults** — `internal/config/default.conf`, compiled in
+2. **`~/.vcomp/vcomp.conf`** — your defaults for every company
+3. **`<company>/.vcomp/vcomp.conf`** — this company's overrides
+
+So an empty directory is already a valid company root, and a company's own
+config is short enough to read at a glance. `vcomp install` writes layer 2;
+`vcomp setup` asks for each setting and writes only the answers that differ.
+
+The format is `key = value` lines with `[section name]` headers. A value is the
+rest of the line, so it may contain spaces, `=` and `#`; only whole-line
+comments. Unknown keys are an error, so typos surface immediately. All files are
+re-read every tick — edits take effect live, and a broken file leaves the last
+good configuration running.
+
+Harness command lines are templates: `{{model}}` and `{{effort}}` are
+substituted, and an empty value removes its token *and the flag it belonged to*,
+so `--model={{model}}` with no model set disappears rather than passing an empty
+argument. Anything settable globally can be set for one person:
+
+```
+[role ceo]
+harness = codex
+model = gpt-5.1-codex-max
+effort = high
+idle_ticks_empty = 20
+nudge = Stop writing plans. Go ask someone a hard question and demand evidence.
+```
+
+## Templates
+
+Every document an agent reads is rendered from a template, resolved the same
+way: `<company>/.vcomp/templates/`, then `~/.vcomp/templates/`, then the copies
+built into the binary. `role_<archetype>.md` supplies a remit and a bias,
+`backstories/<archetype>.txt` supplies a personal history (picked
+deterministically from the role's name), and `standing.md` supplies the
+behaviour every role shares. `developer-1` and `developer-2` share an archetype
+and get different people.
+
+`standing.md` is where the interesting part lives. It gives every role:
+
+- **an internal dialog** — a private monologue in `notes.md`: what am I for, who
+  is blocked on me, what do I believe that I have not checked.
+- **an external dialog** — how they are required to speak outward: lead with the
+  fact, dates not adjectives, never "in progress", disagree explicitly and once.
+  What you think and what you say may differ; what you say and what you do
+  may not.
+- **an empty-inbox rule** — an empty inbox is unallocated capacity, not
+  permission to idle. Prepare for work you can see coming, remove a risk, sharpen
+  a tool, or ask one pointed question. Never wait to be asked.
+- **personal goals** — `goals.md`, two or three things an outsider could check.
+
+Role generation is fixed at creation today: pick an archetype, pick a backstory,
+render. It is meant to become dynamic. The engine already supports that, because
+it only ever asks "is there a `role.md` here?" — the `hr` role writes new ones as
+its own work product, and nothing in Go needs to change for a company to invent
+roles nobody shipped.
+
+## The protocol
+
+**Inbox.** `spaces/<role>/inbox/<topic>/message.md`, plus attachments. To message
+someone you `mkdir` a topic folder in *their* inbox. That is the whole API.
+
+There is no delivery receipt and no ack. You learn a message landed when the
+recipient deletes the topic folder, sends something back, or the change appears
+in `product/`. Every role must prune its own inbox: handled or rejected, the
+folder goes. An inbox that grows forever is a visibly failing role.
+
+Messages are requests, not orders — they may be negotiated or refused.
+
+**Product.** `product/` is a git repo and the only thing that ultimately matters.
+It is the shared, observable state: reading the diff is how roles find out what
+everyone else has been doing.
+
+**Public runs.** `public/run-NNNN/` is a user test. Anyone may create one. The
+engine snapshots `product/` into it and starts a throwaway agent that has never
+seen the company and never will again, which leaves `impressions.md` behind.
+Everyone can read every impression. It is the only unfiltered outside signal the
+company gets.
+
+**The CEO.** One overseer, knows the goal, reads everything. **Never judges the
+product and never does work** — it may only delegate, ask critical questions, and
+demand evidence from the people whose job it is to judge.
+
+**Firing.** The CEO's one hard power: it rewrites `spaces/<role>/role.md`. The
+engine notices, kills that session, and starts a fresh one with no memory. For
+the agent that was there, that is game over — the space and the notes survive,
+the person does not. Every role knows this, and is expected to make its value
+visible. The CEO can also create a space to hire, or delete one to remove a role.
+
+**Ending.** The company stops when `RESULT.md` (configurable) appears in the
+root. Only the CEO writes it, and it holds the final answer handed back to
+whoever set the goal. The engine then closes every session and prints the file.
+Declaring the goal *met* is not the same as judging the product good: the CEO is
+required to base it on what the tester, the art director, and the public runs
+actually showed.
+
+## The engine
+
+A tick loop (default 20s). Per tick:
+
+1. Reload settings. Stop if the result file exists.
+2. **Discover** — every `spaces/*/role.md` is an employee.
+3. **Hire** — a space with no session gets one:
+   `tmux new-session -d -s vcomp-<role> -c <space> <harness>`, then a one-line
+   prompt typed into the pane on the following tick, once the TUI has drawn
+   itself. A role we have run before is restarted with the harness's resume flag
+   so it keeps its memory.
+4. **Fire / rehire** — if `role.md`'s hash changed, kill and restart *without*
+   resume. New person, empty head.
+5. **Revive** — session gone (crashed, exited, killed) → recreate it.
+6. **Nudge** — a session whose pane text is byte-identical for N consecutive
+   ticks is stuck, so type the nudge prompt at it. Because agents animate while
+   thinking, a busy one never looks idle; this needs no harness-specific parsing.
+7. **User runs** — a `public/run-*` without `impressions.md` and without a live
+   session gets a fresh ephemeral agent; when the file appears the session is
+   killed. Runs that fail twice get an `abandoned.txt` and are skipped.
+
+The CEO is treated exactly like everyone else, so it runs in parallel and is kept
+alive by the same rules.
+
+**Pacing.** N above is not one number. A role with something in its inbox is
+prodded after `idle_ticks` (3); a role whose inbox is empty is left alone for
+`idle_ticks_empty` (9), so people with nothing waiting tick over slowly instead
+of filling the time with invented personal projects. Both are settable per role,
+which is the hook for a future version where the CEO — or the project master,
+delegated — throttles a specific idle role by writing to the config the engine
+already re-reads every tick.
+
+That is the entire engine. Everything else is emergent.
+
+## Non-goals
+
+- No sandboxing between roles. Everything is public and cooperative by
+  construction; the interesting failures here are social, not security ones.
+- No scheduler, task graph, or orchestration DSL. If the company needs a process,
+  the agents have to invent it and write it down.
+- No structured message format. `message.md` is prose.
+
+## Operating notes
+
+- Harnesses run with approvals bypassed (`claude --dangerously-skip-permissions`
+  by default) — an agent stuck on a permission prompt looks idle and gets nudged
+  forever. Run the whole thing under a scratch company root.
+- Nudges are typed into the TUI as a single line then Enter, so prompts must stay
+  one line; a newline would submit early.
+- tmux session names are `<session_prefix>-<role>`. Give a second company on the
+  same machine a different prefix.
+- `vcomp attach <role>` opens the tmux session so you can watch someone work.
+
+## Commands
+
+```
+vcomp install  [-force]                 write the defaults to ~/.vcomp/
+vcomp setup    [-root DIR]              ask for settings, save only what differs
+vcomp run      [-root DIR] [-goal "…"]  keep the company alive (foreground)
+vcomp status   [-root DIR]
+vcomp user-run [-root DIR] [-instructions FILE] [-text "…"]
+vcomp attach   [-root DIR] ROLE
+vcomp stop     [-root DIR]
+```
+
+`./install.sh` builds the binary onto your PATH and runs `vcomp install`.
+
+## Testing
+
+Tests run the real tmux and a fake harness — a shell script that records how it
+was started and then echoes whatever is typed at it — so the whole loop (hire,
+prompt, resume, replace, nudge, pace, user run, finish) is verified without
+spending a single API call. `VCOMP_HOME` redirects the global settings directory
+so tests never see your own `~/.vcomp`.
