@@ -29,16 +29,56 @@ func settings(goal string, roster ...string) config.Config {
 
 func TestArchetypeMapping(t *testing.T) {
 	for name, want := range map[string]string{
-		"ceo":           "ceo",
-		"developer-1":   "developer",
-		"developer-12":  "developer",
-		"hr":            "hr",
-		"art-director":  "art-director",
-		"chief-vibes-1": "generic",
-		"nonsense":      "generic",
+		"ceo":             "ceo",
+		"developer-1":     "developer",
+		"developer-12":    "developer",
+		"hr":              "hr",
+		"art-director":    "art-director",
+		"ux-designer":     "ux-designer",
+		"ux-designer-2":   "ux-designer",
+		"sound-designer":  "sound-designer",
+		"finance-manager": "finance-manager",
+		"chief-vibes-1":   "generic",
+		"nonsense":        "generic",
 	} {
-		if got := Archetype(name); got != want {
+		if got := Builtin().Archetype(name); got != want {
 			t.Errorf("Archetype(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// Every catalogue position must render into a complete role document, since a
+// broken one is only discovered when someone puts it in a roster.
+func TestEveryCataloguePositionRenders(t *testing.T) {
+	set := Builtin()
+	positions := set.Positions()
+	if len(positions) < 20 {
+		t.Fatalf("expected the full catalogue, got %d positions", len(positions))
+	}
+	for _, p := range positions {
+		if p.Title == "" || p.Sector == "" {
+			t.Errorf("%s: missing title or sector", p.Name)
+		}
+		doc, err := set.RoleDoc(p.Name)
+		if err != nil {
+			t.Errorf("%s: %v", p.Name, err)
+			continue
+		}
+		if strings.Contains(doc, "{{") {
+			t.Errorf("%s: unsubstituted placeholder", p.Name)
+		}
+		for _, heading := range []string{"## You are", "## Your remit", "## Your bias",
+			"## How you think", "## When your inbox is empty"} {
+			if !strings.Contains(doc, heading) {
+				t.Errorf("%s: missing %q", p.Name, heading)
+			}
+		}
+		if !strings.Contains(doc, p.Title) {
+			t.Errorf("%s: the title %q never appears in the document", p.Name, p.Title)
+		}
+		// A backstory must have been drawn from the position's sector pool.
+		if set.backstoryFrom(p.Sector, p.Name) == "" {
+			t.Errorf("%s: no backstory pool for sector %q", p.Name, p.Sector)
 		}
 	}
 }

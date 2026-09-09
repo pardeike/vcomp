@@ -87,11 +87,24 @@ nudge = Stop writing plans. Go ask someone a hard question and demand evidence.
 
 Every document an agent reads is rendered from a template, resolved the same
 way: `<company>/.vcomp/templates/`, then `~/.vcomp/templates/`, then the copies
-built into the binary. `role_<archetype>.md` supplies a remit and a bias,
-`backstories/<archetype>.txt` supplies a personal history (picked
-deterministically from the role's name), and `standing.md` supplies the
-behaviour every role shares. `developer-1` and `developer-2` share an archetype
-and get different people.
+built into the binary. `standing.md` supplies the behaviour every role shares,
+and `backstories/*.txt` supply personal histories, picked deterministically from
+the role's name - so `developer-1` and `developer-2` share a template and get
+different people.
+
+A role is described in one of two ways, and **the set of roles is whatever
+templates exist**, never a list in the Go:
+
+- `role_<name>.md` — a full hand-written template. The ones that ship are `ceo`,
+  `project-master`, `developer`, `art-director`, `tester`, `hr`, and the
+  `generic` fallback for any name nothing else matches.
+- `positions/<name>.md` — a catalogue entry: a title, a sector, a remit and a
+  bias, rendered through the shared `role_position.md` frame with a backstory
+  drawn from its sector pool. Twenty-three of these ship, covering software,
+  creative and media, research and data, physical product, and business and
+  market. `vcomp roles` lists them.
+
+Adding a role is adding a file. Nothing in the engine has to know.
 
 `standing.md` is where the interesting part lives. It gives every role:
 

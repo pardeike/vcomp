@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"vcomp/internal/config"
@@ -23,27 +24,37 @@ import (
 //go:embed templates
 var builtin embed.FS
 
-// archetypes are the role templates that ship with vcomp. A role name is
-// mapped onto one of these; anything unrecognised gets the generic template.
-var archetypes = map[string]bool{
-	"ceo": true, "project-master": true, "developer": true,
-	"art-director": true, "tester": true, "hr": true,
-}
-
 var numberSuffix = regexp.MustCompile(`-\d+$`)
 
-// Archetype maps a role name onto a template: "developer-2" -> "developer".
-func Archetype(name string) string {
-	base := numberSuffix.ReplaceAllString(name, "")
-	if archetypes[base] {
-		return base
-	}
-	return "generic"
+// PositionsDir holds the catalogue of shorter role definitions: a title, a
+// sector, a remit and a bias, rendered through the role_position.md frame.
+const PositionsDir = "positions"
+
+// Position is one entry in that catalogue.
+type Position struct {
+	Name   string
+	Title  string
+	Sector string
 }
 
 // Set renders documents, looking through a chain of override directories
 // before falling back to the templates compiled into the binary.
 type Set struct{ dirs []string }
+
+// Archetype maps a role name onto whatever template can describe it:
+// "developer-2" -> "developer", "ux-designer-1" -> "ux-designer". The set of
+// roles is therefore whatever templates exist, not a list in this file.
+// Anything unrecognised gets the generic template.
+func (s Set) Archetype(name string) string {
+	base := numberSuffix.ReplaceAllString(name, "")
+	if _, err := s.read("role_" + base + ".md"); err == nil {
+		return base
+	}
+	if _, err := s.read(path.Join(PositionsDir, base+".md")); err == nil {
+		return base
+	}
+	return "generic"
+}
 
 // Load returns the templates that apply to a company root.
 func Load(root string) Set {
@@ -81,10 +92,14 @@ func (s Set) Text(name string, vars map[string]string) (string, error) {
 	return doc, nil
 }
 
-// Backstory picks one of the archetype's backgrounds, deterministically from
-// the role's name, so a given name always gets the same person.
+// Backstory picks one of a pool's backgrounds, deterministically from the
+// role's name, so a given name always gets the same person.
 func (s Set) Backstory(name string) string {
-	text, err := s.read("backstories/" + Archetype(name) + ".txt")
+	return s.backstoryFrom(s.Archetype(name), name)
+}
+
+func (s Set) backstoryFrom(pool, name string) string {
+	text, err := s.read(path.Join("backstories", pool+".txt"))
 	if err != nil {
 		return ""
 	}
@@ -94,18 +109,111 @@ func (s Set) Backstory(name string) string {
 	return strings.TrimSpace(lines[int(h.Sum32())%len(lines)])
 }
 
-// RoleDoc renders the role.md for a new employee: the archetype's remit and
-// bias, its backstory, and the standing behaviour every role shares.
+// RoleDoc renders the role.md for a new employee. A role with its own template
+// uses it; a catalogue position is rendered through the shared frame, with a
+// backstory drawn from its sector.
 func (s Set) RoleDoc(name string) (string, error) {
 	standing, err := s.read("standing.md")
 	if err != nil {
 		return "", err
 	}
-	return s.Text("role_"+Archetype(name)+".md", map[string]string{
+	arch := s.Archetype(name)
+
+	if body, err := s.read(path.Join(PositionsDir, arch+".md")); err == nil {
+		title, sector, remit := splitPosition(body)
+		return s.Text("role_position.md", map[string]string{
+			"NAME":      name,
+			"TITLE":     title,
+			"BACKSTORY": wrap(s.backstoryFrom(sector, name), 78),
+			"REMIT":     remit,
+			"STANDING":  standing,
+		})
+	}
+	return s.Text("role_"+arch+".md", map[string]string{
 		"NAME":      name,
 		"BACKSTORY": wrap(s.Backstory(name), 78),
 		"STANDING":  standing,
 	})
+}
+
+// splitPosition separates a position's "Title:" and "Sector:" header lines
+// from the markdown body that follows them.
+func splitPosition(body string) (title, sector, remit string) {
+	lines := strings.Split(body, "\n")
+	i := 0
+	for ; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			break
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "title":
+			title = strings.TrimSpace(value)
+		case "sector":
+			sector = strings.TrimSpace(value)
+		default:
+			return title, sector, strings.TrimSpace(strings.Join(lines[i:], "\n"))
+		}
+	}
+	return title, sector, strings.TrimSpace(strings.Join(lines[i:], "\n"))
+}
+
+// Positions lists the role catalogue, sorted by sector then name.
+func (s Set) Positions() []Position {
+	names := map[string]bool{}
+	if entries, err := fs.ReadDir(builtin, path.Join("templates", PositionsDir)); err == nil {
+		for _, e := range entries {
+			names[strings.TrimSuffix(e.Name(), ".md")] = true
+		}
+	}
+	for _, dir := range s.dirs {
+		entries, err := os.ReadDir(filepath.Join(dir, PositionsDir))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			names[strings.TrimSuffix(e.Name(), ".md")] = true
+		}
+	}
+	var out []Position
+	for name := range names {
+		body, err := s.read(path.Join(PositionsDir, name+".md"))
+		if err != nil {
+			continue
+		}
+		title, sector, _ := splitPosition(body)
+		out = append(out, Position{Name: name, Title: title, Sector: sector})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Sector != out[j].Sector {
+			return out[i].Sector < out[j].Sector
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// CoreRoles lists the roles that have a full hand-written template of their
+// own, as opposed to a catalogue entry.
+func (s Set) CoreRoles() []string {
+	var names []string
+	entries, err := fs.ReadDir(builtin, "templates")
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		name := strings.TrimPrefix(strings.TrimSuffix(e.Name(), ".md"), "role_")
+		if !strings.HasPrefix(e.Name(), "role_") || name == "position" || name == "generic" {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // wrap reflows a paragraph so an inserted backstory matches the prose around

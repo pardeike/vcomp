@@ -25,6 +25,7 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp install  [-force]               write the defaults to ~/.vcomp/
   vcomp setup    [-root DIR]            ask for settings, save only what differs
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
+  vcomp roles    [-root DIR]            list the role names you can put in a roster
   vcomp status   [-root DIR]
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
   vcomp user-run [-root DIR] [-instructions FILE] [-text "..."]
@@ -54,6 +55,8 @@ func main() {
 		err = cmdSetup(args)
 	case "run":
 		err = cmdRun(args)
+	case "roles":
+		err = cmdRoles(args)
 	case "status":
 		err = cmdStatus(args)
 	case "reset":
@@ -351,6 +354,33 @@ func runEngine(root string) error {
 	}
 	result, _ := e.Result()
 	fmt.Printf("\n%s\n", strings.TrimSpace(result))
+	return nil
+}
+
+// cmdRoles answers "what can I put in the roster", which is otherwise only
+// discoverable by listing the templates directory.
+func cmdRoles(args []string) error {
+	fs := flag.NewFlagSet("roles", flag.ExitOnError)
+	root, err := company(fs, args)
+	if err != nil {
+		return err
+	}
+	set := bootstrap.Load(root)
+
+	fmt.Printf("Roles with a full template of their own:\n  %s\n",
+		strings.Join(set.CoreRoles(), ", "))
+	fmt.Printf("\nCatalogue positions:\n")
+	sector := ""
+	for _, p := range set.Positions() {
+		if p.Sector != sector {
+			sector = p.Sector
+			fmt.Printf("\n  %s\n", sector)
+		}
+		fmt.Printf("    %-22s %s\n", p.Name, p.Title)
+	}
+	fmt.Printf("\nAny of these can go in \"roster =\". A name ending in -N shares a template,\n" +
+		"so developer-1 and developer-2 are two different developers. An unrecognised\n" +
+		"name still works and gets the generic template.\n")
 	return nil
 }
 
