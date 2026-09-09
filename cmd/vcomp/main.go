@@ -21,6 +21,7 @@ import (
 
 const usage = `vcomp - a virtual company of AI agents
 
+  vcomp                                 set this directory up if needed, then run it
   vcomp install  [-force]               write the defaults to ~/.vcomp/
   vcomp setup    [-root DIR]            ask for settings, save only what differs
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
@@ -29,18 +30,23 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp attach   [-root DIR] ROLE       watch someone work
   vcomp stop     [-root DIR]            kill every session
 
-An empty directory is a valid company: "vcomp run -goal ..." fills it in.
+Any empty directory is a company waiting to happen:
+
+  mkdir /tmp/vgame && cd /tmp/vgame && vcomp
+
 Settings resolve built-in defaults, then ~/.vcomp/, then DIR/.vcomp/.
 `
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+	// Bare "vcomp" is the whole point: cd somewhere and get going.
+	cmd, args := "start", []string{}
+	if len(os.Args) > 1 {
+		cmd, args = os.Args[1], os.Args[2:]
 	}
-	cmd, args := os.Args[1], os.Args[2:]
 	var err error
 	switch cmd {
+	case "start":
+		err = cmdStart(args)
 	case "install":
 		err = cmdInstall(args)
 	case "setup":
@@ -106,12 +112,35 @@ func cmdInstall(args []string) error {
 	return nil
 }
 
+// cmdStart is what plain "vcomp" does: set this directory up if it is not a
+// company yet, then keep it running.
+func cmdStart(args []string) error {
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	root, err := company(fs, args)
+	if err != nil {
+		return err
+	}
+	if !bootstrap.Exists(root) {
+		if err := setupCompany(root); err != nil {
+			return err
+		}
+		fmt.Println()
+	}
+	return runEngine(root)
+}
+
 func cmdSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	root, err := company(fs, args)
 	if err != nil {
 		return err
 	}
+	return setupCompany(root)
+}
+
+// setupCompany asks for every setting, keeps only the answers that differ from
+// what is inherited, and creates the company if it is not there yet.
+func setupCompany(root string) error {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return err
@@ -174,6 +203,12 @@ func cmdSetup(args []string) error {
 		ask("role "+name, "nudge", r.Prompts[config.PromptNudge])
 	}
 
+	// Nothing has been written yet, so an aborted setup leaves no trace.
+	exists := bootstrap.Exists(root)
+	if !exists && strings.TrimSpace(goal) == "" {
+		return fmt.Errorf("no goal given, so nothing was created in %s", root)
+	}
+
 	local := config.LocalDir(root)
 	if err := os.MkdirAll(local, 0o755); err != nil {
 		return err
@@ -188,7 +223,7 @@ func cmdSetup(args []string) error {
 		fmt.Printf("\n%d settings written to %s\n", len(overrides), dest)
 	}
 
-	if bootstrap.Exists(root) {
+	if exists {
 		fmt.Println("company already exists; nothing else to do")
 		return nil
 	}
@@ -199,7 +234,7 @@ func cmdSetup(args []string) error {
 	if err := bootstrap.Init(root, cfg); err != nil {
 		return err
 	}
-	fmt.Printf("company created; start it with: vcomp run -root %s\n", root)
+	fmt.Printf("company created: %s\n", strings.Join(cfg.Roster, ", "))
 	return nil
 }
 
@@ -250,6 +285,15 @@ func cmdRun(args []string) error {
 		fmt.Printf("created a company in %s: %s\n", root, strings.Join(cfg.Roster, ", "))
 	}
 
+	return runEngine(root)
+}
+
+// runEngine keeps the company alive until it is interrupted, or until the CEO
+// declares the goal reached - in which case its answer is what you get back.
+func runEngine(root string) error {
+	if !tmux.Available() {
+		return fmt.Errorf("tmux is not installed")
+	}
 	e, err := engine.New(root)
 	if err != nil {
 		return err

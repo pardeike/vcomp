@@ -228,6 +228,7 @@ Things that look arbitrary and are not, so nobody "fixes" them back:
 ## Commands
 
 ```
+vcomp                                   set this directory up if needed, then run it
 vcomp install  [-force]                 write the defaults to ~/.vcomp/
 vcomp setup    [-root DIR]              ask for settings, save only what differs
 vcomp run      [-root DIR] [-goal "…"]  keep the company alive (foreground)
@@ -237,7 +238,22 @@ vcomp attach   [-root DIR] ROLE
 vcomp stop     [-root DIR]
 ```
 
-`./install.sh` builds the binary onto your PATH and runs `vcomp install`.
+The whole thing is meant to start like this:
+
+```
+mkdir /tmp/vgame && cd /tmp/vgame && vcomp
+```
+
+Bare `vcomp` works on the current directory: if it is not a company yet it runs
+the setup questions, and then it starts the engine. Answering the goal with a
+bare Enter aborts and writes nothing at all, so running `vcomp` in the wrong
+directory by accident costs you one keystroke.
+
+`./install.sh` builds the binary into the first directory that is on your PATH
+and writable - `~/Scripts`, `~/bin`, `~/.local/bin`, `/usr/local/bin`,
+`/opt/homebrew/bin`, in that order, preferring user-owned ones so nothing needs
+sudo - then runs `vcomp install` to populate `~/.vcomp/`. `BIN_DIR=… ./install.sh`
+overrides the choice.
 
 ## Working on this repo
 
