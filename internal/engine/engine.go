@@ -28,11 +28,13 @@ type roleState struct {
 	NeedShake  bool   `json:"needShake"`
 	NeedPrompt bool   `json:"needPrompt"`
 	Resumed    bool   `json:"resumed"` // the pending prompt is a welcome-back, not a hello
-	Fails      int    `json:"fails"`   // consecutive times the harness exited on us
-	Broken     bool   `json:"broken"`  // stop trying until something changes
-	LastErr    string `json:"lastErr"` // so a standing complaint is logged once, not every tick
-	PaneHash   string `json:"-"`
-	Idle       int    `json:"-"`
+	// Failure state is deliberately not persisted: restarting the engine is a
+	// person saying "try again", and it should not inherit an old verdict.
+	Fails    int    `json:"-"`
+	Broken   bool   `json:"-"`
+	LastErr  string `json:"-"`
+	PaneHash string `json:"-"`
+	Idle     int    `json:"-"`
 }
 
 type runState struct {
@@ -311,24 +313,29 @@ func (e *Engine) hire(r space.Role, s *roleState) {
 	s.Idle, s.PaneHash = 0, ""
 }
 
-// roleDied handles a harness that exited. The first failure after a resume is
-// almost always "there was nothing to resume", so it retries from scratch;
-// repeated failures mean the command itself is wrong, and hammering it every
-// tick only buries the reason in the log.
+// roleDied handles a harness that exited.
 func (e *Engine) roleDied(name string, s *roleState, sess string) {
 	out, _ := tmux.Capture(sess)
+	status := tmux.DeadStatus(sess)
 	_ = tmux.Kill(sess)
-	s.Fails++
 	s.NeedShake, s.NeedPrompt = false, false
 
-	switch {
-	case s.Resumed && s.Fails == 1:
-		e.log.Printf("%s: nothing to resume, starting fresh", name)
+	// A resume that dies means there was no conversation to come back to, not
+	// that the harness is broken. Fall back to a fresh start, and do not hold
+	// it against the role - otherwise a company whose roles have never run
+	// under this harness condemns every one of them on the first tick.
+	if s.Resumed {
 		s.Started, s.Resumed = false, false
+		e.log.Printf("%s: nothing to resume, starting fresh", name)
+		return
+	}
+
+	s.Fails++
+	switch {
 	case s.Fails >= e.cfg.MaxRestarts:
 		s.Broken = true
-		e.log.Printf("%s: harness exited %d times, giving up until role.md or the config changes\n"+
-			"    command: %s\n%s", name, s.Fails, s.Cmd, indent(lastLines(out, 8)))
+		e.log.Printf("%s: harness exited %d times (last status %s), giving up until role.md or the config changes\n"+
+			"    command: %s\n%s", name, s.Fails, status, s.Cmd, indent(lastLines(out, 8)))
 	case s.Fails == 1:
 		e.log.Printf("%s: session exited, restarting", name)
 	}

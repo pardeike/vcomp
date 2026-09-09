@@ -19,6 +19,7 @@ const prefix = "vcomptest"
 // which prompts the engine sent.
 const fakeHarness = `#!/bin/sh
 echo "$1 $PWD" >> LOGFILE
+if [ "$1" = resume ] && [ -f LOGFILE.noresume ]; then exit 1; fi
 exec cat
 `
 
@@ -35,7 +36,7 @@ func company(t *testing.T, roster string, extraConf string) (string, string, *En
 
 	harnessLog := filepath.Join(root, "harness.log")
 	script := filepath.Join(root, "fake-harness")
-	if err := os.WriteFile(script, []byte(strings.Replace(fakeHarness, "LOGFILE", harnessLog, 1)), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte(strings.ReplaceAll(fakeHarness, "LOGFILE", harnessLog)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	conf := "session_prefix = " + prefix + "\n" +
@@ -195,6 +196,39 @@ func TestHandshakeIsSentBeforeTheFirstPrompt(t *testing.T) {
 	tick(t, e) // now the prompt
 	if got := pane(t, ceo); !strings.Contains(got, "FRESHPROMPT") {
 		t.Fatalf("the prompt should follow the handshake, pane:\n%s", got)
+	}
+}
+
+// A resume that dies means there was nothing to come back to - the usual case
+// for a company whose roles have never run under this harness. It must fall
+// back to a fresh start every time, and never count towards giving up.
+func TestFailedResumeAlwaysFallsBackToAFreshStart(t *testing.T) {
+	_, harnessLog, e := company(t, "ceo", "")
+	ceo := prefix + "-ceo"
+
+	tick(t, e) // hired, fresh
+	tick(t, e) // prompted
+	if err := os.WriteFile(harnessLog+".noresume", nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Far more rounds than max_restarts: a failed resume must never accumulate
+	// into a verdict on the role.
+	for i := 0; i < 4; i++ {
+		if err := tmux.Kill(ceo); err != nil {
+			t.Fatal(err)
+		}
+		tick(t, e) // revived with the resume command, which dies
+		tick(t, e) // noticed, fell back, started fresh
+		if s := e.st.Roles["ceo"]; s.Broken {
+			t.Fatalf("round %d: a failed resume must not mark the role broken", i)
+		}
+		if !tmux.Alive(ceo) {
+			t.Fatalf("round %d: the role should be running again after the fallback", i)
+		}
+	}
+	if n := strings.Count(read(t, harnessLog), "start "); n != 5 {
+		t.Fatalf("expected one fresh start per failed resume, got %d:\n%s", n, read(t, harnessLog))
 	}
 }
 

@@ -52,11 +52,12 @@ func New(session, dir string, cmd []string) error {
 	if len(cmd) == 0 {
 		return errors.New("tmux: empty command")
 	}
+	// Chained into one call so the option lands atomically: a command that
+	// exits immediately would otherwise be gone before a second call arrived,
+	// which is exactly the case worth keeping the pane for.
 	args := append([]string{"new-session", "-d", "-s", session, "-c", dir, "--"}, cmd...)
-	if _, err := run(args...); err != nil {
-		return err
-	}
-	_, err := run("set-option", "-t", session, "-w", "remain-on-exit", "on")
+	args = append(args, ";", "set-option", "-t", session, "-w", "remain-on-exit", "on")
+	_, err := run(args...)
 	return err
 }
 
@@ -65,6 +66,16 @@ func New(session, dir string, cmd []string) error {
 func Dead(session string) bool {
 	out, err := run("display-message", "-p", "-t", session, "#{pane_dead}")
 	return err == nil && strings.TrimSpace(out) == "1"
+}
+
+// DeadStatus is the exit status of a command that has finished, which
+// distinguishes a harness that crashed from one that was told to quit.
+func DeadStatus(session string) string {
+	out, err := run("display-message", "-p", "-t", session, "#{pane_dead_status}")
+	if err != nil {
+		return "?"
+	}
+	return strings.TrimSpace(out)
 }
 
 // Alive reports whether the session exists and its command is still running.
