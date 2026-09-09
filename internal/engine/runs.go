@@ -16,29 +16,59 @@ import (
 	"vcomp/internal/tmux"
 )
 
+func (e *Engine) runSession(run space.Run) string {
+	if s := e.st.Runs[run.Name]; s != nil && s.Session != "" {
+		return s.Session
+	}
+	return run.Session(e.cfg.SessionPrefix)
+}
+
 func (e *Engine) syncRuns() {
+	present := map[string]bool{}
+	defer func() {
+		for name, s := range e.st.Runs {
+			if !present[name] {
+				if s != nil && s.Session != "" {
+					if err := e.killSession(s.Session); err != nil {
+						continue
+					}
+				}
+				delete(e.st.Runs, name)
+			} else if s != nil {
+				e.remember(s.Session, s)
+			}
+		}
+	}()
 	for _, run := range space.Runs(e.root) {
+		present[run.Name] = true
 		rs := e.st.Runs[run.Name]
 		if rs == nil {
 			rs = &runState{}
 			e.st.Runs[run.Name] = rs
 		}
-		sess := run.Session(e.cfg.SessionPrefix)
+		sess := e.runSession(run)
+		if tmux.Exists(sess) && tmux.Option(sess, "@vcomp-root") != e.root {
+			e.notice("run-error/"+run.Name, fmt.Sprintf("%s: session name belongs to another company", run.Name))
+			continue
+		}
 		if tmux.Exists(sess) && tmux.Dead(sess) {
-			_ = tmux.Kill(sess) // the user's agent exited; the pane was kept
+			if err := e.killSession(sess); err != nil {
+				continue
+			}
+			rs.Session = "" // keep attempts across exits
 		}
 		alive := tmux.Alive(sess)
 
 		if run.Done() {
 			if alive {
-				_ = tmux.Kill(run.Session(e.cfg.SessionPrefix))
+				_ = e.killSession(e.runSession(run))
 				e.log.Printf("%s: user finished, impressions.md written", run.Name)
 			}
 			continue
 		}
 		if run.GivenUp() {
 			if alive {
-				_ = tmux.Kill(run.Session(e.cfg.SessionPrefix))
+				_ = e.killSession(e.runSession(run))
 			}
 			continue
 		}
@@ -53,23 +83,28 @@ func (e *Engine) syncRuns() {
 			continue
 		}
 		if err := e.prepareRun(run); err != nil {
-			e.log.Printf("%s: cannot prepare: %v", run.Name, err)
+			e.notice("run-error/"+run.Name, fmt.Sprintf("%s: cannot prepare: %v", run.Name, err))
 			continue
 		}
 		// Users never resume: every run is someone who has never seen this before.
 		cmd, err := e.cfg.CommandFor("", false)
 		if err != nil {
-			e.log.Printf("%s: %v", run.Name, err)
+			e.notice("run-error/"+run.Name, fmt.Sprintf("%s: %v", run.Name, err))
 			continue
 		}
-		if err := tmux.New(run.Session(e.cfg.SessionPrefix), run.Dir, cmd); err != nil {
-			e.log.Printf("%s: cannot start user: %v", run.Name, err)
+		next := *rs
+		next.Attempts++
+		next.StartedAt = time.Now()
+		next.Session = run.Session(e.cfg.SessionPrefix)
+		next.NeedPrompt, next.Idle, next.PaneHash = true, 0, ""
+		next.NeedShake = len(e.cfg.Handshake("")) > 0
+		if err := tmux.New(next.Session, run.Dir, cmd, e.metadata("run", run.Name, &next)); err != nil {
+			e.notice("run-error/"+run.Name, fmt.Sprintf("%s: cannot start user: %v", run.Name, err))
+			rs.Attempts++
 			continue
 		}
-		rs.Attempts++
-		rs.StartedAt = time.Now()
-		rs.NeedPrompt, rs.Idle, rs.PaneHash = true, 0, ""
-		rs.NeedShake = len(e.cfg.Handshake("")) > 0
+		delete(e.notices, "run-error/"+run.Name)
+		*rs = next
 		e.log.Printf("%s: user run started (attempt %d)", run.Name, rs.Attempts)
 	}
 }
@@ -78,21 +113,25 @@ func (e *Engine) syncRuns() {
 // kill it if it overruns.
 func (e *Engine) pokeUser(run space.Run, rs *runState) {
 	if rs.NeedShake {
-		_ = tmux.SendKeys(run.Session(e.cfg.SessionPrefix), e.cfg.Handshake(""))
+		if err := tmux.SendKeys(e.runSession(run), e.cfg.Handshake("")); err != nil {
+			return
+		}
 		rs.NeedShake = false
 		return
 	}
 	if rs.NeedPrompt {
-		e.send(run.Session(e.cfg.SessionPrefix), e.cfg.Prompt("", config.PromptUser))
+		if !e.send(e.runSession(run), e.cfg.Prompt("", config.PromptUser)) {
+			return
+		}
 		rs.NeedPrompt, rs.Idle, rs.PaneHash = false, 0, ""
 		return
 	}
 	if time.Since(rs.StartedAt) > e.cfg.UserTimeout {
-		_ = tmux.Kill(run.Session(e.cfg.SessionPrefix))
+		_ = e.killSession(e.runSession(run))
 		e.log.Printf("%s: user run timed out", run.Name)
 		return
 	}
-	pane, err := tmux.Capture(run.Session(e.cfg.SessionPrefix))
+	pane, err := tmux.Capture(e.runSession(run))
 	if err != nil {
 		return
 	}
@@ -102,7 +141,7 @@ func (e *Engine) pokeUser(run space.Run, rs *runState) {
 		rs.PaneHash, rs.Idle = h, 0
 	}
 	if rs.Idle >= e.cfg.IdleThreshold("", false) {
-		e.send(run.Session(e.cfg.SessionPrefix), e.cfg.Prompt("", config.PromptUserNudge))
+		e.send(e.runSession(run), e.cfg.Prompt("", config.PromptUserNudge))
 		rs.Idle, rs.PaneHash = 0, ""
 	}
 }
@@ -125,14 +164,22 @@ func (e *Engine) prepareRun(run space.Run) error {
 		return nil
 	}
 	src := filepath.Join(e.root, space.ProductDir)
-	if err := copyTree(src, dst); err != nil {
+	tmp, err := os.MkdirTemp(run.Dir, ".snapshot-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err := copyTree(src, tmp); err != nil {
 		return err
 	}
 	version := "unknown"
 	if out, err := exec.Command("git", "-C", src, "log", "-1", "--format=%h %s").Output(); err == nil {
 		version = strings.TrimSpace(string(out))
 	}
-	return os.WriteFile(filepath.Join(run.Dir, "version.txt"), []byte(version+"\n"), 0o644)
+	if err := space.WriteFile(filepath.Join(run.Dir, "version.txt"), []byte(version+"\n"), 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
 }
 
 // copyTree copies src to dst, leaving .git behind: the user gets the product,
@@ -146,11 +193,21 @@ func copyTree(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
+		if d.Name() == ".git" {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if d.IsDir() {
 			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(target, filepath.Join(dst, rel))
 		}
 		if !d.Type().IsRegular() {
 			return nil

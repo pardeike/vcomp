@@ -46,7 +46,12 @@ func Roles(root string) ([]Role, error) {
 		dir := filepath.Join(base, e.Name())
 		b, err := os.ReadFile(filepath.Join(dir, RoleFile))
 		if err != nil {
-			continue // a folder without a role.md is not a person
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
+			if _, err := os.Stat(filepath.Join(dir, "role.json")); err != nil {
+				continue
+			}
 		}
 		roles = append(roles, Role{Name: e.Name(), Dir: dir, Hash: Hash(b)})
 	}
@@ -105,4 +110,25 @@ func Hash(b []byte) string {
 func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// WriteFile publishes a complete file in one rename. Readers see either the old
+// contents or the new contents, never a partly written state or role document.
+func WriteFile(path string, data []byte, mode os.FileMode) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".vcomp-write-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err = f.Chmod(mode); err == nil {
+		_, err = f.Write(data)
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(f.Name(), path)
 }

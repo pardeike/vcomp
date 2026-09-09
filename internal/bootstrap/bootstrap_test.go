@@ -38,8 +38,8 @@ func TestArchetypeMapping(t *testing.T) {
 		"ux-designer-2":   "ux-designer",
 		"sound-designer":  "sound-designer",
 		"finance-manager": "finance-manager",
-		"chief-vibes-1":   "generic",
-		"nonsense":        "generic",
+		"chief-vibes-1":   "",
+		"nonsense":        "",
 	} {
 		if got := Builtin().Archetype(name); got != want {
 			t.Errorf("Archetype(%q) = %q, want %q", name, got, want)
@@ -64,7 +64,7 @@ func TestEveryCataloguePositionRenders(t *testing.T) {
 			t.Errorf("%s: %v", p.Name, err)
 			continue
 		}
-		if strings.Contains(doc, "{{") {
+		if strings.Contains(expandCompany(doc, config.Default()), "{{") {
 			t.Errorf("%s: unsubstituted placeholder", p.Name)
 		}
 		for _, heading := range []string{"## You are", "## Your remit", "## Your bias",
@@ -99,10 +99,8 @@ func TestInitProducesAWorkingCompany(t *testing.T) {
 			t.Errorf("missing %s: %v", p, err)
 		}
 	}
-	// Creating a company writes no settings file: an untouched company runs
-	// entirely on the inherited defaults.
-	if _, err := os.Stat(filepath.Join(config.LocalDir(root), config.FileName)); err == nil {
-		t.Error("init should not write a settings file")
+	if cfg, err := config.Load(root); err != nil || cfg.Goal != "make something people want" {
+		t.Fatalf("effective goal was not retained for reset: %q %v", cfg.Goal, err)
 	}
 
 	// Every role document must be fully rendered and carry both the archetype's
@@ -321,12 +319,12 @@ func TestTemplatesResolveLocalThenGlobalThenBuiltIn(t *testing.T) {
 	root := t.TempDir()
 
 	// A global template applies to every company.
-	globalDir := filepath.Join(home, config.TemplatesDir)
+	globalDir := filepath.Join(home, config.TemplatesDir, "positions")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	global := "# {{NAME}}\n\n{{BACKSTORY}}\n\nYou work for the whole estate.\n\n{{STANDING}}\n"
-	if err := os.WriteFile(filepath.Join(globalDir, "role_developer.md"), []byte(global), 0o644); err != nil {
+	global := "Title: Developer\nSector: developer\n\n## Your remit\nYou work for the whole estate.\n"
+	if err := os.WriteFile(filepath.Join(globalDir, "developer.md"), []byte(global), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := Load(root).RoleDoc("developer-1")
@@ -338,12 +336,12 @@ func TestTemplatesResolveLocalThenGlobalThenBuiltIn(t *testing.T) {
 	}
 
 	// The company's own copy wins over the global one.
-	localDir := filepath.Join(config.LocalDir(root), config.TemplatesDir)
+	localDir := filepath.Join(config.LocalDir(root), config.TemplatesDir, "positions")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	local := "# {{NAME}}\n\n{{BACKSTORY}}\n\nYou only write Fortran.\n\n{{STANDING}}\n"
-	if err := os.WriteFile(filepath.Join(localDir, "role_developer.md"), []byte(local), 0o644); err != nil {
+	local := "Title: Developer\nSector: developer\n\n## Your remit\nYou only write Fortran.\n"
+	if err := os.WriteFile(filepath.Join(localDir, "developer.md"), []byte(local), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	doc, err = Load(root).RoleDoc("developer-1")
@@ -395,5 +393,93 @@ func TestExportInstallsAndProtectsEdits(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(edited); string(b) == "mine" {
 		t.Error("a forced install should have replaced the template")
+	}
+}
+
+func TestRoleInputsPreserveProfession(t *testing.T) {
+	hermetic(t)
+	root := t.TempDir()
+	cfg := settings("build a thing", "ceo")
+	if err := Init(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := Hire(root, cfg, "alex", "developer", "You built games.", false); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(root, "spaces/alex/role.md"))
+	if err := Steer(root, cfg, "alex", "Focus on keyboard use."); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(filepath.Join(root, "spaces/alex/role.md"))
+	if !strings.HasPrefix(string(after), strings.TrimRight(string(before), "\n")) || !strings.Contains(string(after), "Focus on keyboard use.") {
+		t.Fatal("steering replaced the fixed document")
+	}
+	if err := Hire(root, cfg, "alex", "tester", "new background", true); err == nil {
+		t.Fatal("replacement changed profession")
+	}
+	if err := Hire(root, cfg, "unknown", "", "", false); err == nil {
+		t.Fatal("unknown profession accepted")
+	}
+	if err := Hire(root, cfg, "ceo", "ceo", "replacement", true); err == nil {
+		t.Fatal("CEO is user-configured")
+	}
+	if err := Steer(root, cfg, "ceo", "replacement"); err == nil {
+		t.Fatal("CEO steering accepted")
+	}
+	path := filepath.Join(root, "spaces/alex/role.md")
+	os.WriteFile(path, []byte("become someone else"), 0644)
+	if _, err := RefreshRole(root, cfg, "alex"); err != nil {
+		t.Fatal(err)
+	}
+	repaired, _ := os.ReadFile(path)
+	if string(repaired) != string(after) {
+		t.Fatal("generated profession was not restored")
+	}
+}
+
+func TestCEOUserTweaksAndFixedTemplate(t *testing.T) {
+	home := hermetic(t)
+	root := t.TempDir()
+	cfg := settings("build a thing", "ceo")
+	dir := filepath.Join(home, "templates", "positions")
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "ceo.md"), []byte("Title: Chief Executive\nSector: ceo\n\n## Your remit\nFixed user-owned CEO base.\n"), 0644)
+	cfg.CEOInstructionsFile = "ceo-notes.md"
+	os.WriteFile(filepath.Join(root, cfg.CEOInstructionsFile), []byte("Keep the team small.\nAsk for evidence."), 0644)
+	if err := Init(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	doc, _ := os.ReadFile(filepath.Join(root, "spaces/ceo/role.md"))
+	if !strings.Contains(string(doc), "Fixed user-owned CEO base.") || !strings.HasSuffix(string(doc), "Keep the team small.\nAsk for evidence.\n") {
+		t.Fatalf("CEO composition wrong: %s", doc)
+	}
+}
+
+func TestResetValidatesBeforeDeletingAndRetainsFlagGoal(t *testing.T) {
+	hermetic(t)
+	root := t.TempDir()
+	cfg := settings("line one\nline two", "ceo")
+	if err := Init(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(root)
+	if err != nil || loaded.Goal != cfg.Goal {
+		t.Fatalf("goal lost: %q %v", loaded.Goal, err)
+	}
+	sentinel := filepath.Join(root, "product", "keep.txt")
+	os.WriteFile(sentinel, []byte("work"), 0644)
+	bad := loaded
+	bad.Goal = ""
+	if err := Reset(root, bad); err == nil {
+		t.Fatal("invalid rebuild accepted")
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatal("work deleted before validation")
+	}
+	if err := Reset(root, loaded); err != nil {
+		t.Fatal(err)
+	}
+	if !Exists(root) {
+		t.Fatal("company was not rebuilt")
 	}
 }

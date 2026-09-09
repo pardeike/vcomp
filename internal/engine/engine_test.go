@@ -1,12 +1,17 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"vcomp/internal/space"
 
 	"vcomp/internal/bootstrap"
 	"vcomp/internal/config"
@@ -31,6 +36,17 @@ func company(t *testing.T, roster string, extraConf string) (string, string, *En
 	t.Helper()
 	if !tmux.Available() {
 		t.Skip("tmux not installed")
+	}
+	if os.Getenv("VCOMP_TEST_TMUX") == "" {
+		real, err := exec.LookPath("tmux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		bin := t.TempDir()
+		socket := fmt.Sprintf("vcomp-test-%d", os.Getpid())
+		os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\nexec "+real+" -L "+socket+" \"$@\"\n"), 0755)
+		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		t.Setenv("VCOMP_TEST_TMUX", socket)
 	}
 	t.Setenv(config.HomeEnv, t.TempDir())
 	root := t.TempDir()
@@ -136,7 +152,10 @@ func TestHireResumeAndReplace(t *testing.T) {
 	// The CEO firing someone: role.md is rewritten, so the occupant is replaced
 	// and must come back with a blank head - start, never resume.
 	before := strings.Count(read(t, harnessLog), "start ")
-	rolePath := filepath.Join(root, "spaces", "ceo", "role.md")
+	rolePath := filepath.Join(root, "ceo-instructions.md")
+	if err := config.UpdateLocal(root, []config.Override{{Key: "ceo_instructions_file", Value: rolePath}}); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(rolePath, []byte("# ceo\n\nA different person entirely.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -437,5 +456,197 @@ func TestAbandonsRunsThatNeverFinish(t *testing.T) {
 	tick(t, e)
 	if tmux.Exists(session) {
 		t.Fatal("an abandoned run must not be restarted")
+	}
+}
+
+func TestResumedSessionKeepsMemoryAfterLaterExit(t *testing.T) {
+	_, path, e := company(t, "ceo", "")
+	tick(t, e)
+	tick(t, e)
+	tmux.Kill(e.Session("ceo"))
+	tick(t, e)
+	tick(t, e)
+	tick(t, e)
+	before := strings.Count(read(t, path), "start ")
+	if err := tmux.SendKeys(e.Session("ceo"), []string{"C-d"}); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+	if strings.Count(read(t, path), "start ") != before || !e.st.Roles["ceo"].Resumed {
+		t.Fatal("successful conversation was restarted fresh")
+	}
+}
+
+func TestRecoverLiveSessionsWithLostStateAndNewPrefix(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	tick(t, e)
+	tick(t, e)
+	session := e.Session("ceo")
+	os.WriteFile(e.statePath(), []byte("{broken"), 0644)
+	if err := config.UpdateLocal(root, []config.Override{{Key: "session_prefix", Value: "changed-prefix"}}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	tick(t, next)
+	if next.Session("ceo") != session || !tmux.Alive(session) {
+		t.Fatal("live session was not recovered")
+	}
+	if tmux.Exists("changed-prefix-ceo") {
+		t.Fatal("duplicate role was started")
+	}
+	if next.st.Roles["ceo"].NeedPrompt {
+		t.Fatal("recovered session lost startup state")
+	}
+}
+
+func TestStartupFailuresStopAndRecoverAfterSettingsEdit(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	if err := config.UpdateLocal(root, []config.Override{{Section: "harness fake", Key: "start", Value: "/bin/sh -c exit"}, {Key: "max_restarts", Value: "2"}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		tick(t, e)
+	}
+	if !e.st.Roles["ceo"].Broken {
+		t.Fatal("startup failures were retried forever")
+	}
+	if err := config.UpdateLocal(root, []config.Override{{Section: "harness fake", Key: "start", Value: "/bin/cat"}}); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+	if !tmux.Alive(e.Session("ceo")) {
+		t.Fatal("edited settings did not revive role")
+	}
+}
+
+func TestSnapshotPreservesLinksAndFailedCopyCanRetry(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	product := filepath.Join(root, "product")
+	os.WriteFile(filepath.Join(product, "asset"), []byte("content"), 0755)
+	os.Symlink("asset", filepath.Join(product, "link"))
+	dir := filepath.Join(root, "public", "run-0001")
+	os.MkdirAll(dir, 0755)
+	run := space.Run{Name: "run-0001", Dir: dir}
+	os.Rename(product, product+"-away")
+	if err := e.prepareRun(run); err == nil {
+		t.Fatal("missing product accepted")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "product")); !os.IsNotExist(err) {
+		t.Fatal("partial snapshot published")
+	}
+	os.Rename(product+"-away", product)
+	if err := e.prepareRun(run); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "product", "link")
+	if target, err := os.Readlink(link); err != nil || target != "asset" {
+		t.Fatalf("link not retained: %s %v", target, err)
+	}
+	if b, err := os.ReadFile(link); err != nil || string(b) != "content" {
+		t.Fatal("link no longer works")
+	}
+}
+
+func TestCompanyLockAndChangeOnlyOutput(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	if err := e.Lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Unlock()
+	next, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	if err := next.Lock(); err == nil {
+		t.Fatal("two engines claimed one company")
+	}
+	e.Unlock()
+	if err := next.Lock(); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	e.log = log.New(&out, "", 0)
+	e.notice("quiet", "ceo: quiet")
+	e.notice("quiet", "ceo: quiet")
+	e.notice("quiet", "ceo: active")
+	if strings.Count(out.String(), "ceo: quiet") != 1 || !strings.Contains(out.String(), "ceo: active") {
+		t.Fatal(out.String())
+	}
+}
+
+func TestMissingGeneratedRoleAndDeletedPublicRun(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	dir := filepath.Join(root, "public", "run-0001")
+	os.MkdirAll(dir, 0755)
+	tick(t, e)
+	tick(t, e)
+	ceo := e.Session("ceo")
+	rolePath := filepath.Join(root, "spaces/ceo/role.md")
+	os.Remove(rolePath)
+	os.RemoveAll(dir)
+	tick(t, e)
+	if !tmux.Alive(ceo) {
+		t.Fatal("missing generated document killed a valid occupant")
+	}
+	if _, err := os.Stat(rolePath); err != nil {
+		t.Fatal("missing document was not restored")
+	}
+	if tmux.Exists(prefix + "-user-run-0001") {
+		t.Fatal("deleted user run left an agent")
+	}
+}
+
+func TestChangedPrefixDoesNotTouchOtherCompany(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	tick(t, e)
+	old := e.Session("ceo")
+	if err := config.UpdateLocal(root, []config.Override{{Key: "session_prefix", Value: "other-prefix"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmux.New("other-prefix-ceo", t.TempDir(), []string{"/bin/cat"}, map[string]string{"@vcomp-root": "another-company"}); err != nil {
+		t.Fatal(err)
+	}
+	defer tmux.Kill("other-prefix-ceo")
+	tick(t, e)
+	if e.Session("ceo") != old {
+		t.Fatal("prefix edit detached the original session")
+	}
+	tmux.Kill(old)
+	tick(t, e)
+	if tmux.Option("other-prefix-ceo", "@vcomp-root") != "another-company" {
+		t.Fatal("foreign session replaced")
+	}
+	if _, err := e.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if !tmux.Alive("other-prefix-ceo") {
+		t.Fatal("stop killed another company")
+	}
+}
+
+func TestOutputReportsChangesEvenWithoutStateFile(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	e.cfg.StateFile = ""
+	roles, err := space.Roles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	e.log = log.New(&out, "", 0)
+	e.publish(roles)
+	first := out.String()
+	e.publish(roles)
+	if out.String() != first || !strings.Contains(first, "product: 1 commit") {
+		t.Fatalf("unchanged report repeated or product missing: %s", out.String())
+	}
+	os.MkdirAll(filepath.Join(root, "spaces/ceo/inbox/new-task"), 0755)
+	e.publish(roles)
+	if strings.Count(out.String(), "ceo: inbox 1") != 1 || strings.Count(out.String(), "product:") != 1 {
+		t.Fatal(out.String())
 	}
 }

@@ -28,6 +28,7 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
   vcomp roles    [-root DIR]            list the role names you can put in a roster
   vcomp hire     NAME [-position P] [-backstory "..."] [-replace]
+  vcomp steer    NAME [-root DIR] [-text "..."] [-file FILE]
   vcomp status   [-root DIR]
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
   vcomp user-run [-root DIR] [-instructions FILE] [-text "..."]
@@ -61,6 +62,8 @@ func main() {
 		err = cmdRoles(args)
 	case "hire":
 		err = cmdHire(args)
+	case "steer":
+		err = cmdSteer(args)
 	case "status":
 		err = cmdStatus(args)
 	case "reset":
@@ -252,7 +255,7 @@ func setupCompany(root string) error {
 			fmt.Printf("\nNo answers differ from the inherited settings, so no %s was written.\n", dest)
 		}
 	} else {
-		if err := os.WriteFile(dest, []byte(config.RenderOverrides(overrides)), 0o644); err != nil {
+		if err := config.UpdateLocal(root, overrides); err != nil {
 			return err
 		}
 		fmt.Printf("\n%d settings written to %s\n", len(overrides), dest)
@@ -348,6 +351,19 @@ func runEngine(root string) error {
 		return err
 	}
 	defer e.Close()
+	finished := make(chan struct{})
+	defer close(finished)
+	stop := make(chan struct{})
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+	go func() {
+		select {
+		case <-sig:
+			close(stop)
+		case <-finished:
+		}
+	}()
 	if err := e.Lock(); err != nil {
 		return err
 	}
@@ -373,11 +389,6 @@ func runEngine(root string) error {
 		fmt.Println("the goal changed since this company was created; the CEO has been told")
 	}
 
-	stop := make(chan struct{})
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() { <-sig; close(stop) }()
-
 	if !e.Run(stop) {
 		return nil
 	}
@@ -396,9 +407,7 @@ func cmdRoles(args []string) error {
 	}
 	set := bootstrap.Load(root)
 
-	fmt.Printf("Roles with a full template of their own:\n  %s\n",
-		strings.Join(set.CoreRoles(), ", "))
-	fmt.Printf("\nCatalogue positions:\n")
+	fmt.Printf("Role catalogue:\n")
 	sector := ""
 	for _, p := range set.Positions() {
 		if p.Sector != sector {
@@ -407,9 +416,9 @@ func cmdRoles(args []string) error {
 		}
 		fmt.Printf("    %-22s %s\n", p.Name, p.Title)
 	}
-	fmt.Printf("\nAny of these can go in \"roster =\". A name ending in -N shares a template,\n" +
-		"so developer-1 and developer-2 are two different developers. An unrecognised\n" +
-		"name still works and gets the generic template.\n")
+	fmt.Printf("\nNames ending in -N share a profession. Custom names need -position.\n" +
+		"Each employee combines a fixed profession, a backstory and optional CEO steering.\n" +
+		"The CEO's extra instructions come only from ceo_instructions_file.\n")
 	return nil
 }
 
@@ -489,6 +498,9 @@ func cmdReset(args []string) error {
 		return err
 	}
 
+	if err := bootstrap.Validate(root, cfg); err != nil {
+		return err
+	}
 	produced := bootstrap.Produced(root, cfg)
 	fmt.Printf("This deletes everything the company produced in %s:\n", root)
 	for _, p := range produced {
@@ -505,9 +517,16 @@ func cmdReset(args []string) error {
 		}
 	}
 
-	if e, err := engine.New(root); err == nil {
-		e.Stop()
-		e.Close()
+	e, err := engine.New(root)
+	if err != nil {
+		return err
+	}
+	defer e.Close()
+	if err := e.StopAndLock(); err != nil {
+		return err
+	}
+	if _, err := e.Stop(); err != nil {
+		return err
 	}
 	if err := bootstrap.Reset(root, cfg); err != nil {
 		return err
@@ -523,16 +542,28 @@ func cmdStop(args []string) error {
 	if err != nil {
 		return err
 	}
+	roots := []string{root}
 	if *all {
-		fmt.Printf("killed %d sessions\n", engine.StopPrefix("vcomp"))
-		return nil
+		roots = engine.CompanyRoots()
 	}
-	e, err := engine.New(root)
-	if err != nil {
-		return err
+	n := 0
+	for _, companyRoot := range roots {
+		e, err := engine.NewControl(companyRoot)
+		if err != nil {
+			return err
+		}
+		if err := e.StopAndLock(); err != nil {
+			e.Close()
+			return err
+		}
+		killed, stopErr := e.Stop()
+		n += killed
+		e.Close()
+		if stopErr != nil {
+			return stopErr
+		}
 	}
-	defer e.Close()
-	fmt.Printf("killed %d sessions\n", e.Stop())
+	fmt.Printf("killed %d sessions\n", n)
 	return nil
 }
 
@@ -592,4 +623,35 @@ func cmdAttach(args []string) error {
 	c := exec.Command("tmux", "attach", "-t", session)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return c.Run()
+}
+
+func cmdSteer(args []string) error {
+	fs := flag.NewFlagSet("steer", flag.ContinueOnError)
+	dir := fs.String("root", ".", "company root directory")
+	text := fs.String("text", "", "CEO steering text; empty clears it")
+	file := fs.String("file", "", "read steering text from a file")
+	name, err := nameAndFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	root, err := filepath.Abs(*dir)
+	if err != nil {
+		return err
+	}
+	if *file != "" {
+		b, err := os.ReadFile(*file)
+		if err != nil {
+			return err
+		}
+		*text = string(b)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	if err := bootstrap.Steer(root, cfg, name, *text); err != nil {
+		return err
+	}
+	fmt.Printf("updated %s's steering; the profession and backstory are unchanged\n", name)
+	return nil
 }

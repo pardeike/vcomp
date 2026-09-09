@@ -5,30 +5,31 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
-	"syscall"
 	"time"
 
+	"vcomp/internal/bootstrap"
 	"vcomp/internal/config"
 	"vcomp/internal/space"
 	"vcomp/internal/tmux"
 )
 
 type roleState struct {
-	RoleHash   string `json:"roleHash"`
-	Cmd        string `json:"cmd"`     // what we last started; a change makes resuming impossible
-	Started    bool   `json:"started"` // we have run this occupant before, so resume it
-	Harness    string `json:"harness"` // a conversation cannot move between harnesses
-	NeedShake  bool   `json:"needShake"`
-	NeedPrompt bool   `json:"needPrompt"`
-	Resumed    bool   `json:"resumed"` // the pending prompt is a welcome-back, not a hello
+	Session      string `json:"session"`
+	SettingsHash string `json:"settingsHash"`
+	RoleHash     string `json:"roleHash"`
+	Cmd          string `json:"cmd"`     // what we last started; a change makes resuming impossible
+	Started      bool   `json:"started"` // we have run this occupant before, so resume it
+	Harness      string `json:"harness"` // a conversation cannot move between harnesses
+	NeedShake    bool   `json:"needShake"`
+	NeedPrompt   bool   `json:"needPrompt"`
+	Resumed      bool   `json:"resumed"` // the pending prompt is a welcome-back, not a hello
 	// Failure state is deliberately not persisted: restarting the engine is a
 	// person saying "try again", and it should not inherit an old verdict.
 	Fails    int    `json:"-"`
@@ -39,6 +40,7 @@ type roleState struct {
 }
 
 type runState struct {
+	Session    string    `json:"session"`
 	Attempts   int       `json:"attempts"`
 	StartedAt  time.Time `json:"startedAt"`
 	NeedShake  bool      `json:"needShake"`
@@ -62,17 +64,34 @@ type state struct {
 }
 
 type Engine struct {
-	root string
-	cfg  config.Config
-	st   state
-	log  *log.Logger
-	logF *os.File
+	root    string
+	cfg     config.Config
+	st      state
+	log     *log.Logger
+	logF    *os.File
+	lockF   *os.File
+	notices map[string]string
 }
 
-func New(root string) (*Engine, error) {
-	cfg, err := config.Load(root)
+func New(root string) (*Engine, error) { return newEngine(root, false) }
+
+// NewControl can stop a company even while its configuration is broken.
+func NewControl(root string) (*Engine, error) { return newEngine(root, true) }
+
+func newEngine(root string, control bool) (*Engine, error) {
+	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		if !control {
+			return nil, err
+		}
+		cfg = config.Default()
 	}
 	if err := os.MkdirAll(config.LocalDir(root), 0o755); err != nil {
 		return nil, err
@@ -94,41 +113,11 @@ func New(root string) (*Engine, error) {
 		log:  log.New(io.MultiWriter(os.Stdout, f), "", log.Ltime),
 	}
 	e.loadState()
+	e.recoverSessions()
 	return e, nil
 }
 
-func (e *Engine) Close() error { return e.logF.Close() }
-
-// lockPath holds the pid of the engine running this company.
-func (e *Engine) lockPath() string {
-	return filepath.Join(config.LocalDir(e.root), "engine.pid")
-}
-
-// Lock claims this company for this process. Two engines on one company would
-// each prod the same sessions and each believe the other's restarts were their
-// own, so the second one refuses rather than fighting.
-func (e *Engine) Lock() error {
-	if b, err := os.ReadFile(e.lockPath()); err == nil {
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) {
-			return fmt.Errorf("an engine is already running this company (pid %d)\n"+
-				"stop it, or run: vcomp stop -root %s", pid, e.root)
-		}
-	}
-	return os.WriteFile(e.lockPath(), fmt.Appendf(nil, "%d\n", os.Getpid()), 0o644)
-}
-
-// Unlock releases the claim. A lock left behind by a crash is stale and the
-// next engine takes it, since the pid in it is gone.
-func (e *Engine) Unlock() { _ = os.Remove(e.lockPath()) }
-
-// alive reports whether a process still exists. Signal 0 checks without sending.
-func alive(pid int) bool {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return p.Signal(syscall.Signal(0)) == nil
-}
+func (e *Engine) Close() error { e.Unlock(); return e.logF.Close() }
 
 func (e *Engine) statePath() string {
 	return filepath.Join(config.LocalDir(e.root), "state.json")
@@ -139,7 +128,12 @@ func (e *Engine) loadState() {
 	if err != nil {
 		return
 	}
-	_ = json.Unmarshal(b, &e.st)
+	var loaded state
+	if err := json.Unmarshal(b, &loaded); err != nil {
+		e.log.Printf("cannot read saved state; recovering from tmux: %v", err)
+		return
+	}
+	e.st = loaded
 	if e.st.Roles == nil {
 		e.st.Roles = map[string]*roleState{}
 	}
@@ -149,11 +143,28 @@ func (e *Engine) loadState() {
 	if e.st.Messages == nil {
 		e.st.Messages = map[string]*msgState{}
 	}
+	for name, s := range e.st.Roles {
+		if s == nil {
+			delete(e.st.Roles, name)
+		}
+	}
+	for name, s := range e.st.Runs {
+		if s == nil {
+			delete(e.st.Runs, name)
+		}
+	}
+	for name, s := range e.st.Messages {
+		if s == nil {
+			delete(e.st.Messages, name)
+		}
+	}
 }
 
 func (e *Engine) saveState() {
 	if b, err := json.MarshalIndent(e.st, "", "  "); err == nil {
-		_ = os.WriteFile(e.statePath(), b, 0o644)
+		if err := space.WriteFile(e.statePath(), b, 0o644); err != nil {
+			e.log.Printf("cannot save state: %v", err)
+		}
 	}
 }
 
@@ -162,8 +173,17 @@ func (e *Engine) saveState() {
 func (e *Engine) reload() {
 	cfg, err := config.Load(e.root)
 	if err != nil {
-		e.log.Printf("config not reloaded: %v", err)
+		e.notice("config", fmt.Sprintf("config not reloaded: %v", err))
 		return
+	}
+	if e.notices["config"] != "" {
+		e.notice("config", "configuration reloaded")
+		delete(e.notices, "config")
+	}
+	before, _ := json.Marshal(e.cfg)
+	after, _ := json.Marshal(cfg)
+	if string(before) != string(after) {
+		e.log.Print("configuration changed; new settings loaded")
 	}
 	e.cfg = cfg
 }
@@ -172,6 +192,11 @@ func (e *Engine) reload() {
 // whether the company finished.
 func (e *Engine) Run(stop <-chan struct{}) bool {
 	e.log.Printf("engine started: root=%s tick=%s harness=%s", e.root, e.cfg.Tick, e.cfg.Harness)
+	select {
+	case <-stop:
+		return false
+	default:
+	}
 	if e.Tick() {
 		return e.close()
 	}
@@ -195,7 +220,11 @@ func (e *Engine) Run(stop <-chan struct{}) bool {
 
 // close winds the company up once the goal has been declared reached.
 func (e *Engine) close() bool {
-	e.log.Printf("goal declared reached; closing %d sessions", e.Stop())
+	n, err := e.Stop()
+	e.log.Printf("goal declared reached; closed %d sessions", n)
+	if err != nil {
+		e.log.Printf("could not close all sessions: %v", err)
+	}
 	return true
 }
 
@@ -210,6 +239,11 @@ func (e *Engine) Tick() bool {
 	if err != nil {
 		e.log.Printf("cannot read spaces: %v", err)
 		return false
+	}
+	if changed, err := bootstrap.SyncGoal(e.root, e.cfg); err != nil {
+		e.notice("goal-error", fmt.Sprintf("cannot update CEO goal: %v", err))
+	} else if changed {
+		e.log.Print("CEO goal updated")
 	}
 	e.syncRoles(roles)
 	e.syncRuns()
@@ -237,33 +271,50 @@ func (e *Engine) Result() (string, bool) {
 func (e *Engine) ResultFile() string { return e.cfg.ResultFile }
 
 // Session names the tmux session a role runs in.
-func (e *Engine) Session(role string) string { return e.cfg.SessionPrefix + "-" + role }
+func (e *Engine) Session(role string) string {
+	if s := e.st.Roles[role]; s != nil && s.Session != "" {
+		return s.Session
+	}
+	return e.cfg.SessionPrefix + "-" + role
+}
 
 // Stop kills every session this engine owns.
-func (e *Engine) Stop() int { return StopPrefix(e.cfg.SessionPrefix + "-") }
-
-// StopPrefix kills every session whose name starts with prefix. With the bare
-// "vcomp-" it finds companies whose engine has gone and left its agents
-// running, which is otherwise only discoverable by knowing to run "tmux ls".
-func StopPrefix(prefix string) int {
+func (e *Engine) Stop() (int, error) {
 	n := 0
-	for _, s := range tmux.List() {
-		if strings.HasPrefix(s, prefix) {
-			_ = tmux.Kill(s)
+	var errs []error
+	for _, sess := range tmux.List() {
+		if tmux.Option(sess, "@vcomp-root") != e.root {
+			continue
+		}
+		if err := tmux.Kill(sess); err != nil {
+			errs = append(errs, fmt.Errorf("cannot stop %s: %w", sess, err))
+		} else {
 			n++
 		}
 	}
-	return n
+	return n, errors.Join(errs...)
 }
 
-// Orphans lists running vcomp sessions that no live engine is supervising.
+// Orphans lists all vcomp-owned sessions, including those whose engine stopped.
 func Orphans() []string {
 	var out []string
 	for _, s := range tmux.List() {
-		if strings.HasPrefix(s, "vcomp") {
+		if tmux.Option(s, "@vcomp-root") != "" {
 			out = append(out, s)
 		}
 	}
 	sort.Strings(out)
 	return out
+}
+
+// notice reports a changed observation once. Heartbeats do not become events.
+func (e *Engine) notice(key, text string) {
+	if e.notices == nil {
+		e.notices = map[string]string{}
+	}
+	if e.notices[key] == text {
+		return
+	}
+	e.notices[key] = text
+	e.log.Print(text)
 }

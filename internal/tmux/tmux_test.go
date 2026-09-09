@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -57,5 +58,34 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 	if err := Kill(s); err != nil || Exists(s) {
 		t.Fatalf("Kill should remove even a dead session: %v", err)
+	}
+}
+
+func TestOriginalPaneSurvivesSelectionChanges(t *testing.T) {
+	if !Available() {
+		t.Skip("tmux unavailable")
+	}
+	session := fmt.Sprintf("vcomp-pane-test-%d", os.Getpid())
+	if err := New(session, t.TempDir(), []string{"/bin/cat"}); err != nil {
+		t.Fatal(err)
+	}
+	defer Kill(session)
+	original := Option(session, "@vcomp-pane")
+	if _, err := run("split-window", "-t", original, "/bin/cat"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SendLine(session, "original-pane-only"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	out, err := Capture(session)
+	if err != nil || !strings.Contains(out, "original-pane-only") {
+		t.Fatalf("prompt missed original pane: %q %v", out, err)
+	}
+	if _, err := run("kill-pane", "-t", original); err != nil {
+		t.Fatal(err)
+	}
+	if !Exists(session) || !Dead(session) {
+		t.Fatal("missing original pane was mistaken for a live agent")
 	}
 }

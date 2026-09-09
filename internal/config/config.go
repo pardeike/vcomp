@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"vcomp/internal/space"
 )
 
 //go:embed default.conf
@@ -84,16 +86,20 @@ type Config struct {
 	UserMaxAttempts int
 	MaxRestarts     int
 
-	SessionPrefix string
-	Goal          string
-	ResultFile    string
-	StateFile     string
-	AuditFile     string
-	Harness       string
-	Harnesses     map[string]Harness
-	Prompts       map[string]string
-	Roster        []string
-	Roles         map[string]Role
+	SessionPrefix       string
+	CEOInstructionsFile string
+	GoalFile            string
+	StopTimeout         time.Duration
+	StopPoll            time.Duration
+	Goal                string
+	ResultFile          string
+	StateFile           string
+	AuditFile           string
+	Harness             string
+	Harnesses           map[string]Harness
+	Prompts             map[string]string
+	Roster              []string
+	Roles               map[string]Role
 }
 
 // Prompt kinds.
@@ -147,6 +153,13 @@ func Load(root string) (Config, error) {
 		if err := c.Merge(string(b)); err != nil {
 			return c, fmt.Errorf("%s: %w", p, err)
 		}
+	}
+	if c.GoalFile != "" {
+		b, err := os.ReadFile(filepath.Join(root, c.GoalFile))
+		if err != nil {
+			return c, fmt.Errorf("goal_file: %w", err)
+		}
+		c.Goal = string(b)
 	}
 	return c, nil
 }
@@ -270,6 +283,9 @@ func (c *Config) setTop(key, value string) error {
 		if err != nil {
 			return fmt.Errorf("%s: %v", key, err)
 		}
+		if v <= 0 {
+			return fmt.Errorf("%s must be positive", key)
+		}
 		*d = v
 		return nil
 	}
@@ -284,6 +300,10 @@ func (c *Config) setTop(key, value string) error {
 	switch key {
 	case "tick":
 		return dur(&c.Tick)
+	case "stop_timeout":
+		return dur(&c.StopTimeout)
+	case "stop_poll":
+		return dur(&c.StopPoll)
 	case "user_timeout":
 		return dur(&c.UserTimeout)
 	case "idle_ticks":
@@ -295,9 +315,16 @@ func (c *Config) setTop(key, value string) error {
 	case "max_restarts":
 		return num(&c.MaxRestarts)
 	case "session_prefix":
+		if value == "" || strings.ContainsAny(value, ".:/\\ \t\n") {
+			return fmt.Errorf("session_prefix needs a nonempty tmux-compatible name")
+		}
 		c.SessionPrefix = value
 	case "goal":
-		c.Goal = value
+		c.Goal, c.GoalFile = value, ""
+	case "ceo_instructions_file":
+		c.CEOInstructionsFile = value
+	case "goal_file":
+		c.GoalFile, c.Goal = value, ""
 	case "result_file":
 		c.ResultFile = value
 	case "state_file":
@@ -407,6 +434,12 @@ func RenderOverrides(overrides []Override) string {
 	b.WriteString("# This company's settings. Everything not named here is inherited from\n")
 	b.WriteString("# " + filepath.Join(Home(), FileName) + ", and then from vcomp's built-in defaults.\n")
 
+	b.WriteString(renderSettings(overrides))
+	return b.String()
+}
+
+func renderSettings(overrides []Override) string {
+	var b strings.Builder
 	bySection := map[string][]Override{}
 	var order []string
 	for _, o := range overrides {
@@ -483,4 +516,56 @@ func firstNonEmpty(vs ...string) string {
 		}
 	}
 	return ""
+}
+
+// UpdateLocal preserves existing settings, including those setup does not ask
+// about. Repeated sections are accepted by the same parser as normal config.
+func UpdateLocal(root string, updates []Override) error {
+	p := filepath.Join(LocalDir(root), FileName)
+	b, err := os.ReadFile(p)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if _, err := Parse(string(b)); err != nil {
+		return err
+	}
+	lines := strings.Split(string(b), "\n")
+	section := ""
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.Join(strings.Fields(strings.Trim(line, "[]")), " ")
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, _, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		for _, u := range updates {
+			if section == u.Section && (key == u.Key || section == "" &&
+				(key == "goal" && u.Key == "goal_file" || key == "goal_file" && u.Key == "goal")) {
+				lines[i] = "" // the new value is written once below
+			}
+		}
+	}
+	var top, rest []Override
+	for _, u := range updates {
+		if u.Section == "" {
+			top = append(top, u)
+		} else {
+			rest = append(rest, u)
+		}
+	}
+	text := renderSettings(top) + "\n" + strings.Join(lines, "\n") + "\n" + renderSettings(rest)
+	if _, err := Parse(text); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(LocalDir(root), 0755); err != nil {
+		return err
+	}
+	return space.WriteFile(p, []byte(text), 0644)
 }

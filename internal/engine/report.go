@@ -20,18 +20,16 @@ import (
 // information here is pulled, and an overview nobody asked for is just another
 // thing filling up a context window.
 func (e *Engine) publish(roles []space.Role) {
-	if e.cfg.StateFile == "" {
-		return
-	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Company state\n\nRewritten by the engine every %s. Read it, do not edit it.\n\n",
 		e.cfg.Tick)
 	fmt.Fprintf(&b, "%-20s %-9s %6s %6s  %s\n", "ROLE", "SESSION", "INBOX", "IDLE", "SPACE LAST CHANGED")
 	for _, r := range roles {
 		session := "stopped"
-		if tmux.Alive(r.Session(e.cfg.SessionPrefix)) {
+		if tmux.Alive(e.Session(r.Name)) {
 			session = "running"
 		}
+		e.notice("inbox/"+r.Name, fmt.Sprintf("%s: inbox %d", r.Name, countDir(r.Inbox())))
 		idle := 0
 		if st := e.st.Roles[r.Name]; st != nil {
 			if st.Broken {
@@ -43,7 +41,9 @@ func (e *Engine) publish(roles []space.Role) {
 			r.Name, session, countDir(r.Inbox()), idle, age(newestUnder(r.Dir)))
 	}
 
-	fmt.Fprintf(&b, "\nPRODUCT  %s\n", e.productLine())
+	product := e.productLine()
+	e.notice("product", "product: "+product)
+	fmt.Fprintf(&b, "\nPRODUCT  %s\n", product)
 
 	var done, waiting, gaveUp int
 	for _, run := range space.Runs(e.root) {
@@ -59,7 +59,9 @@ func (e *Engine) publish(roles []space.Role) {
 	fmt.Fprintf(&b, "PUBLIC   %d user runs: %d with impressions, %d in progress, %d abandoned\n",
 		done+waiting+gaveUp, done, waiting, gaveUp)
 
-	_ = os.WriteFile(filepath.Join(e.root, e.cfg.StateFile), []byte(b.String()), 0o644)
+	if e.cfg.StateFile != "" {
+		_ = space.WriteFile(filepath.Join(e.root, e.cfg.StateFile), []byte(b.String()), 0o644)
+	}
 }
 
 func (e *Engine) productLine() string {
@@ -68,7 +70,7 @@ func (e *Engine) productLine() string {
 	if err != nil {
 		return "no commits yet"
 	}
-	last, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%h %s (%cr)").Output()
+	last, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%h %s").Output()
 	if err != nil {
 		return strings.TrimSpace(string(count)) + " commits"
 	}
@@ -133,7 +135,7 @@ func (e *Engine) Status(w io.Writer) {
 	}
 	for _, r := range roles {
 		status := "stopped"
-		if tmux.Alive(r.Session(e.cfg.SessionPrefix)) {
+		if tmux.Alive(e.Session(r.Name)) {
 			status = "running"
 		}
 		n := 0
@@ -163,7 +165,7 @@ func (e *Engine) Status(w io.Writer) {
 			status = "impressions written"
 		case run.GivenUp():
 			status = "abandoned"
-		case tmux.Alive(run.Session(e.cfg.SessionPrefix)):
+		case tmux.Alive(e.runSession(run)):
 			status = "user in session"
 		}
 		fmt.Fprintf(w, "  %-12s %s\n", run.Name, status)

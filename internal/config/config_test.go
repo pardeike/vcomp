@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -143,5 +145,22 @@ func TestResumeFallsBackToStart(t *testing.T) {
 	got, err := c.CommandFor("", true)
 	if err != nil || strings.Join(got, " ") != "only-one" {
 		t.Fatalf("a harness without resume should reuse start, got %v %v", got, err)
+	}
+}
+
+func TestUpdateLocalKeepsUnansweredSettings(t *testing.T) {
+	t.Setenv(HomeEnv, t.TempDir())
+	root := t.TempDir()
+	os.MkdirAll(LocalDir(root), 0755)
+	os.WriteFile(filepath.Join(LocalDir(root), FileName), []byte("goal = retained\nroster = ceo\nsession_prefix = custom\n[role ceo]\nmodel = special\n"), 0644)
+	if err := UpdateLocal(root, []Override{{Key: "tick", Value: "2s"}}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Goal != "retained" || c.SessionPrefix != "custom" || c.Roles["ceo"].Model != "special" || len(c.Roster) != 1 {
+		t.Fatalf("settings lost: %+v", c)
 	}
 }

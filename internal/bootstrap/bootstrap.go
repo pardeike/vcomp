@@ -6,6 +6,7 @@ package bootstrap
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io/fs"
@@ -44,16 +45,13 @@ type Set struct{ dirs []string }
 // Archetype maps a role name onto whatever template can describe it:
 // "developer-2" -> "developer", "ux-designer-1" -> "ux-designer". The set of
 // roles is therefore whatever templates exist, not a list in this file.
-// Anything unrecognised gets the generic template.
+// Unrecognised names need an explicit catalogue position.
 func (s Set) Archetype(name string) string {
 	base := numberSuffix.ReplaceAllString(name, "")
-	if _, err := s.read("role_" + base + ".md"); err == nil {
-		return base
-	}
 	if _, err := s.read(path.Join(PositionsDir, base+".md")); err == nil {
 		return base
 	}
-	return "generic"
+	return ""
 }
 
 // Load returns the templates that apply to a company root.
@@ -101,7 +99,12 @@ func (s Set) Text(name string, vars map[string]string) (string, error) {
 // chosen deterministically from the role's name, so a given name is always the
 // same person and two designers are reliably different ones.
 func (s Set) Backstory(name string) string {
-	return s.flavour(s.Archetype(name), name)
+	body, err := s.read(path.Join(PositionsDir, s.Archetype(name)+".md"))
+	if err != nil {
+		return ""
+	}
+	_, sector, _ := splitPosition(body)
+	return s.flavour(sector, name)
 }
 
 func (s Set) flavour(pool, name string) string {
@@ -134,9 +137,7 @@ func pick(options []string, seed string) string {
 	return options[int(h.Sum32())%len(options)]
 }
 
-// RoleDoc renders the role.md for a new employee. A role with its own template
-// uses it; a catalogue position is rendered through the shared frame, with a
-// backstory drawn from its sector.
+// RoleDoc renders a catalogue profession with a backstory from its sector.
 func (s Set) RoleDoc(name string) (string, error) {
 	return s.RoleDocAs(name, "", "")
 }
@@ -149,32 +150,26 @@ func (s Set) RoleDocAs(name, position, backstory string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	arch := position
-	if arch == "" {
-		arch = s.Archetype(name)
+	if position == "" {
+		position = s.Archetype(name)
 	}
-	flavour := backstory
-
-	if body, err := s.read(path.Join(PositionsDir, arch+".md")); err == nil {
-		title, sector, remit := splitPosition(body)
-		if flavour == "" {
-			flavour = s.flavour(sector, name)
-		}
-		return s.Text("role_position.md", map[string]string{
-			"NAME":      name,
-			"TITLE":     title,
-			"BACKSTORY": wrap(flavour, 78),
-			"REMIT":     remit,
-			"STANDING":  standing,
-		})
+	if position == "" {
+		return "", fmt.Errorf("%q needs a catalogue position (vcomp roles)", name)
 	}
-	if flavour == "" {
-		flavour = s.flavour(arch, name)
+	body, err := s.read(path.Join(PositionsDir, position+".md"))
+	if err != nil {
+		return "", err
 	}
-	return s.Text("role_"+arch+".md", map[string]string{
-		"NAME":      name,
-		"BACKSTORY": wrap(flavour, 78),
-		"STANDING":  standing,
+	title, sector, remit := splitPosition(body)
+	if title == "" || sector == "" || remit == "" {
+		return "", fmt.Errorf("incomplete position %q", position)
+	}
+	if backstory == "" {
+		backstory = s.flavour(sector, name)
+	}
+	return s.Text("role_position.md", map[string]string{
+		"NAME": name, "TITLE": title, "BACKSTORY": wrap(backstory, 78),
+		"REMIT": remit, "STANDING": standing, "STEERING": "",
 	})
 }
 
@@ -239,25 +234,6 @@ func (s Set) Positions() []Position {
 	return out
 }
 
-// CoreRoles lists the roles that have a full hand-written template of their
-// own, as opposed to a catalogue entry.
-func (s Set) CoreRoles() []string {
-	var names []string
-	entries, err := fs.ReadDir(builtin, "templates")
-	if err != nil {
-		return nil
-	}
-	for _, e := range entries {
-		name := strings.TrimPrefix(strings.TrimSuffix(e.Name(), ".md"), "role_")
-		if !strings.HasPrefix(e.Name(), "role_") || name == "position" || name == "generic" {
-			continue
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 // wrap reflows a paragraph so an inserted backstory matches the prose around
 // it, since these documents are meant to be read and edited by hand.
 func wrap(text string, width int) string {
@@ -309,27 +285,20 @@ func Export(dir string, force bool) (written []string, err error) {
 
 // Exists reports whether root already holds a company.
 func Exists(root string) bool {
+	if _, err := os.Stat(filepath.Join(root, space.SpacesDir, "ceo", "role.json")); err == nil {
+		return true
+	}
 	_, err := os.Stat(filepath.Join(root, space.SpacesDir, "ceo", space.RoleFile))
 	return err == nil
 }
 
-// Init lays out a company in root, using cfg for the roster and the goal. It
-// writes no settings file: what to persist is the caller's decision.
+// Init lays out a company and retains a supplied goal for later resets.
 func Init(root string, cfg config.Config) error {
 	if Exists(root) {
 		return fmt.Errorf("%s already holds a company", root)
 	}
-	if strings.TrimSpace(cfg.Goal) == "" {
-		return fmt.Errorf("a goal is required (-goal, or 'goal =' in %s)", config.FileName)
-	}
-	hasCEO := false
-	for _, name := range cfg.Roster {
-		if name == "ceo" {
-			hasCEO = true
-		}
-	}
-	if !hasCEO {
-		return fmt.Errorf("the roster must include a ceo, got %v", cfg.Roster)
+	if err := Validate(root, cfg); err != nil {
+		return err
 	}
 
 	for _, d := range []string{space.SpacesDir, space.PublicDir, space.ProductDir, config.DirName} {
@@ -350,16 +319,23 @@ func Init(root string, cfg config.Config) error {
 		return err
 	}
 
+	// Retain a flag-supplied (possibly multiline) goal so reset and restart use it.
+	current, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	if current.Goal != cfg.Goal {
+		goalFile := filepath.Join(config.DirName, "goal.txt")
+		if err := space.WriteFile(filepath.Join(root, goalFile), []byte(cfg.Goal), 0644); err != nil {
+			return err
+		}
+		if err := config.UpdateLocal(root, []config.Override{{Key: "goal_file", Value: goalFile}}); err != nil {
+			return err
+		}
+	}
 	for _, name := range cfg.Roster {
-		dir := filepath.Join(root, space.SpacesDir, name)
-		if err := os.MkdirAll(filepath.Join(dir, "inbox"), 0o755); err != nil {
-			return err
-		}
-		doc, err := set.RoleDoc(name)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(dir, space.RoleFile), []byte(expandCompany(doc, cfg)), 0o644); err != nil {
+		position := set.Archetype(name)
+		if err := writeRole(root, cfg, name, RoleSpec{Position: position}); err != nil {
 			return err
 		}
 	}
@@ -382,27 +358,179 @@ func Init(root string, cfg config.Config) error {
 // the shared catalogue and a personal background. Composing it here rather than
 // letting the document be written freehand is what stops a company's idea of
 // what a role is from drifting as it invents new ones.
-func Hire(root string, cfg config.Config, name, position, backstory string, replace bool) error {
-	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return fmt.Errorf("%q is not a usable role name", name)
+// RoleSpec is the editable input; role.md is always rendered from the catalogue.
+// Authority is a company convention: HR supplies backstories, the CEO steering,
+// and the user alone changes templates or CEO instructions.
+type RoleSpec struct {
+	Position  string `json:"position"`
+	Backstory string `json:"backstory,omitempty"`
+	Steering  string `json:"steering,omitempty"`
+}
+
+func readRole(root, name string) (RoleSpec, error) {
+	var spec RoleSpec
+	b, err := os.ReadFile(filepath.Join(root, space.SpacesDir, name, "role.json"))
+	if err != nil {
+		return spec, err
 	}
-	dir := filepath.Join(root, space.SpacesDir, name)
-	rolePath := filepath.Join(dir, space.RoleFile)
-	if _, err := os.Stat(rolePath); err == nil && !replace {
-		return fmt.Errorf("%s already exists; -replace ends whoever is in it", rolePath)
+	err = json.Unmarshal(b, &spec)
+	return spec, err
+}
+
+func renderRole(root string, cfg config.Config, name string, spec RoleSpec) (string, error) {
+	if name == "ceo" {
+		spec = RoleSpec{Position: "ceo"}
+	} else if spec.Position == "ceo" {
+		return "", fmt.Errorf("the CEO position belongs only to ceo")
 	}
-	set := Load(root)
-	if position != "" && set.Archetype(strings.TrimSuffix(position, ".md")) == "generic" && position != "generic" {
-		return fmt.Errorf("no such position %q (try: vcomp roles)", position)
+	doc, err := Load(root).RoleDocAs(name, spec.Position, spec.Backstory)
+	if err != nil {
+		return "", err
 	}
-	doc, err := set.RoleDocAs(name, position, backstory)
+	steering := ""
+	if name == "ceo" && cfg.CEOInstructionsFile != "" {
+		p := cfg.CEOInstructionsFile
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(root, p)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return "", err
+		}
+		steering, err = Load(root).Text("ceo_tweaks.md", map[string]string{"TEXT": string(b)})
+		if err != nil {
+			return "", err
+		}
+	} else if name != "ceo" && spec.Steering != "" {
+		steering, err = Load(root).Text("role_steering.md", map[string]string{"TEXT": spec.Steering})
+		if err != nil {
+			return "", err
+		}
+	}
+	return expandCompany(strings.TrimRight(doc, "\n")+"\n\n"+steering, cfg), nil
+}
+
+func writeRole(root string, cfg config.Config, name string, spec RoleSpec) error {
+	doc, err := renderRole(root, cfg, name, spec)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "inbox"), 0o755); err != nil {
+	dir := filepath.Join(root, space.SpacesDir, name)
+	if err := os.MkdirAll(filepath.Join(dir, "inbox"), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(rolePath, []byte(expandCompany(doc, cfg)), 0o644)
+	b, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := space.WriteFile(filepath.Join(dir, "role.json"), b, 0644); err != nil {
+		return err
+	}
+	return space.WriteFile(filepath.Join(dir, space.RoleFile), []byte(doc), 0644)
+}
+
+func Hire(root string, cfg config.Config, name, position, backstory string, replace bool) error {
+	if err := RoleName(name); err != nil {
+		return err
+	}
+	if name == "ceo" {
+		return fmt.Errorf("the CEO is configured by the user, not hired or replaced")
+	}
+	spec, err := readRole(root, name)
+	if err == nil {
+		if !replace {
+			return fmt.Errorf("%s already exists; -replace replaces its backstory", name)
+		}
+		if position != "" && position != spec.Position {
+			return fmt.Errorf("%s keeps its fixed profession %s", name, spec.Position)
+		}
+		spec.Backstory = backstory
+	} else {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if position == "" {
+			position = Load(root).Archetype(name)
+		}
+		if position == "" {
+			return fmt.Errorf("%q needs -position from vcomp roles", name)
+		}
+		spec = RoleSpec{Position: position, Backstory: backstory}
+	}
+	return writeRole(root, cfg, name, spec)
+}
+
+func RoleName(name string) error {
+	if name == "" || strings.ContainsAny(name, "/\\:. \t\n") || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "user-run-") {
+		return fmt.Errorf("%q is not a usable role name", name)
+	}
+	return nil
+}
+
+// Steer changes only the final section, keeping the profession and backstory.
+func Steer(root string, cfg config.Config, name, text string) error {
+	if err := RoleName(name); err != nil {
+		return err
+	}
+	if name == "ceo" {
+		return fmt.Errorf("use the user setting ceo_instructions_file to steer the CEO")
+	}
+	spec, err := readRole(root, name)
+	if err != nil {
+		return err
+	}
+	spec.Steering = text
+	return writeRole(root, cfg, name, spec)
+}
+
+// RefreshRole repairs edits to the generated document and applies edited inputs.
+func RefreshRole(root string, cfg config.Config, name string) (space.Role, error) {
+	spec, err := readRole(root, name)
+	if err != nil {
+		return space.Role{}, err
+	}
+	doc, err := renderRole(root, cfg, name, spec)
+	if err != nil {
+		return space.Role{}, err
+	}
+	dir := filepath.Join(root, space.SpacesDir, name)
+	p := filepath.Join(dir, space.RoleFile)
+	old, _ := os.ReadFile(p)
+	if string(old) != doc {
+		if err := space.WriteFile(p, []byte(doc), 0644); err != nil {
+			return space.Role{}, err
+		}
+	}
+	return space.Role{Name: name, Dir: dir, Hash: space.Hash([]byte(doc))}, nil
+}
+
+// Validate checks rebuild inputs before reset removes any company output.
+func Validate(root string, cfg config.Config) error {
+	if strings.TrimSpace(cfg.Goal) == "" {
+		return fmt.Errorf("a goal is required before creating or resetting a company")
+	}
+	seen := map[string]bool{}
+	for _, name := range cfg.Roster {
+		if err := RoleName(name); err != nil {
+			return err
+		}
+		if seen[name] {
+			return fmt.Errorf("duplicate role %q", name)
+		}
+		seen[name] = true
+		if _, err := renderRole(root, cfg, name, RoleSpec{Position: Load(root).Archetype(name)}); err != nil {
+			return err
+		}
+	}
+	if !seen["ceo"] {
+		return fmt.Errorf("the roster must include ceo")
+	}
+	for _, name := range []string{"CONVENTIONS.md", "goal.md", "product_readme.md"} {
+		if _, err := Load(root).read(name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // expandCompany fills in the placeholders that depend on this company's
@@ -480,6 +608,9 @@ func Produced(root string, cfg config.Config) []string {
 // settings, so a run can be started over without re-entering anything. It
 // removes only the known paths, never the directory it was given.
 func Reset(root string, cfg config.Config) error {
+	if err := Validate(root, cfg); err != nil {
+		return err
+	}
 	for _, p := range Produced(root, cfg) {
 		if err := os.RemoveAll(p); err != nil {
 			return err
@@ -498,17 +629,18 @@ func SyncGoal(root string, cfg config.Config) (bool, error) {
 		return false, nil
 	}
 	p := filepath.Join(root, space.SpacesDir, "ceo", "goal.md")
-	if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), goal) {
-		return false, nil
-	}
 	doc, err := Load(root).Text("goal.md", map[string]string{
 		"GOAL":   goal,
 		"RESULT": cfg.ResultFile,
+		"STATE":  cfg.StateFile,
 	})
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(p, []byte(doc), 0o644)
+	if b, err := os.ReadFile(p); err == nil && string(b) == doc {
+		return false, nil
+	}
+	return true, space.WriteFile(p, []byte(doc), 0o644)
 }
 
 // initProduct makes the artifact a real git repo with one commit, so that
