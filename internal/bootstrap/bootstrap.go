@@ -262,6 +262,43 @@ func Describe(root string) string {
 		root, len(names), strings.Join(names, ", "), runs, config.DirName)
 }
 
+// Produced lists everything a company generated, as opposed to what was
+// configured: the spaces and their contents, the artifact, the user runs, the
+// rendered conventions, the result, and the engine's own bookkeeping. The
+// settings and any local templates are deliberately not in here.
+func Produced(root string, cfg config.Config) []string {
+	paths := []string{
+		filepath.Join(root, space.SpacesDir),
+		filepath.Join(root, space.PublicDir),
+		filepath.Join(root, space.ProductDir),
+		filepath.Join(root, "CONVENTIONS.md"),
+		filepath.Join(config.LocalDir(root), "state.json"),
+		filepath.Join(config.LocalDir(root), "engine.log"),
+	}
+	if cfg.ResultFile != "" {
+		paths = append(paths, filepath.Join(root, cfg.ResultFile))
+	}
+	var present []string
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			present = append(present, p)
+		}
+	}
+	return present
+}
+
+// Reset removes what a company produced and builds it again from the same
+// settings, so a run can be started over without re-entering anything. It
+// removes only the known paths, never the directory it was given.
+func Reset(root string, cfg config.Config) error {
+	for _, p := range Produced(root, cfg) {
+		if err := os.RemoveAll(p); err != nil {
+			return err
+		}
+	}
+	return Init(root, cfg)
+}
+
 // SyncGoal rewrites the CEO's goal.md when the configured goal no longer
 // matches it, so that changing "goal =" actually reaches the only person who is
 // ever told it. Without this the goal is frozen at creation and a later edit is

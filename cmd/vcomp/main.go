@@ -26,6 +26,7 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp setup    [-root DIR]            ask for settings, save only what differs
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
   vcomp status   [-root DIR]
+  vcomp reset    [-root DIR] [-y]       start over, keeping the settings
   vcomp user-run [-root DIR] [-instructions FILE] [-text "..."]
   vcomp attach   [-root DIR] ROLE       watch someone work
   vcomp stop     [-root DIR]            kill every session
@@ -55,6 +56,8 @@ func main() {
 		err = cmdRun(args)
 	case "status":
 		err = cmdStatus(args)
+	case "reset":
+		err = cmdReset(args)
 	case "stop":
 		err = cmdStop(args)
 	case "user-run":
@@ -363,6 +366,50 @@ func cmdStatus(args []string) error {
 	}
 	defer e.Close()
 	e.Status(os.Stdout)
+	return nil
+}
+
+// cmdReset throws the company away and builds it again from the same settings,
+// which is the difference between starting over and starting from nothing.
+func cmdReset(args []string) error {
+	fs := flag.NewFlagSet("reset", flag.ExitOnError)
+	yes := fs.Bool("y", false, "do not ask for confirmation")
+	root, err := company(fs, args)
+	if err != nil {
+		return err
+	}
+	if !bootstrap.Exists(root) {
+		return fmt.Errorf("no company in %s to reset", root)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+
+	produced := bootstrap.Produced(root, cfg)
+	fmt.Printf("This deletes everything the company produced in %s:\n", root)
+	for _, p := range produced {
+		fmt.Printf("  %s\n", strings.TrimPrefix(p, root+string(filepath.Separator)))
+	}
+	fmt.Printf("It keeps %s and any local templates, and builds the company again from them.\n",
+		filepath.Join(config.LocalDir(root), config.FileName))
+
+	if !*yes {
+		fmt.Printf("\nType yes to go ahead: ")
+		in := bufio.NewScanner(os.Stdin)
+		if !in.Scan() || strings.TrimSpace(in.Text()) != "yes" {
+			return fmt.Errorf("nothing was removed")
+		}
+	}
+
+	if e, err := engine.New(root); err == nil {
+		e.Stop()
+		e.Close()
+	}
+	if err := bootstrap.Reset(root, cfg); err != nil {
+		return err
+	}
+	fmt.Printf("\n%s\n", bootstrap.Describe(root))
 	return nil
 }
 

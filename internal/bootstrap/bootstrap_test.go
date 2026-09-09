@@ -161,6 +161,81 @@ func TestSyncGoalReachesTheCEOAfterTheFact(t *testing.T) {
 	}
 }
 
+// Reset is "start this run over", not "start from nothing": everything the
+// company produced goes, everything that was configured stays.
+func TestResetClearsWorkButKeepsSettings(t *testing.T) {
+	hermetic(t)
+	root := t.TempDir()
+	cfg := settings("build a thing", "ceo", "developer-1")
+	if err := Init(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Settings and a local template override: both must survive.
+	local := config.LocalDir(root)
+	if err := os.MkdirAll(filepath.Join(local, config.TemplatesDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(local, config.FileName)
+	if err := os.WriteFile(conf, []byte("goal = build a thing\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tmpl := filepath.Join(local, config.TemplatesDir, "standing.md")
+	if err := os.WriteFile(tmpl, []byte("my own standing orders"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Work the company produced.
+	produced := map[string]string{
+		filepath.Join(root, "spaces", "developer-1", "inbox", "a-task", "message.md"): "please do this",
+		filepath.Join(root, "spaces", "ceo", "notes.md"):                              "my private thoughts",
+		filepath.Join(root, "product", "MADE.md"):                                     "the artifact",
+		filepath.Join(root, "public", "run-0001", "impressions.md"):                   "it was fine",
+		filepath.Join(root, cfg.ResultFile):                                           "we are done",
+	}
+	for p, body := range produced {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := Reset(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	for p := range produced {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("%s survived the reset", p)
+		}
+	}
+	for _, p := range []string{conf, tmpl} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("reset destroyed a setting it should have kept: %s", p)
+		}
+	}
+	// And it is a working company again, not just an empty directory.
+	if !Exists(root) {
+		t.Fatal("reset should have rebuilt the company")
+	}
+	for _, p := range []string{"CONVENTIONS.md", "product/README.md", "product/.git",
+		"spaces/ceo/goal.md", "spaces/developer-1/inbox"} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("rebuilt company is missing %s", p)
+		}
+	}
+	// The rebuild uses the kept templates.
+	doc, err := os.ReadFile(filepath.Join(root, "spaces", "developer-1", "role.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(doc), "my own standing orders") {
+		t.Error("the rebuild ignored the local template that reset kept")
+	}
+}
+
 func TestTemplatesResolveLocalThenGlobalThenBuiltIn(t *testing.T) {
 	home := hermetic(t)
 	root := t.TempDir()

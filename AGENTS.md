@@ -261,6 +261,7 @@ vcomp install  [-force]                 write the defaults to ~/.vcomp/
 vcomp setup    [-root DIR]              ask for settings, save only what differs
 vcomp run      [-root DIR] [-goal "…"]  keep the company alive (foreground)
 vcomp status   [-root DIR]
+vcomp reset    [-root DIR] [-y]         start the run over, keeping the settings
 vcomp user-run [-root DIR] [-instructions FILE] [-text "…"]
 vcomp attach   [-root DIR] ROLE
 vcomp stop     [-root DIR]
@@ -276,6 +277,13 @@ Bare `vcomp` works on the current directory: if it is not a company yet it runs
 the setup questions, and then it starts the engine. Answering the goal with a
 bare Enter aborts and writes nothing at all, so running `vcomp` in the wrong
 directory by accident costs you one keystroke.
+
+`vcomp reset` is the difference between starting over and starting from
+nothing: it deletes everything the company produced - the spaces, the artifact,
+the public runs, the engine's bookkeeping - and builds it again from the same
+`vcomp.conf` and templates, so a run can be repeated without answering the setup
+questions again. It removes only known paths, never the directory it was given,
+and asks before doing it.
 
 `./install.sh` builds the binary into the first directory that is on your PATH
 and writable - `~/Scripts`, `~/bin`, `~/.local/bin`, `/usr/local/bin`,
