@@ -31,7 +31,7 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
   vcomp user-run [-root DIR] [-instructions FILE] [-text "..."]
   vcomp attach   [-root DIR] ROLE       watch someone work
-  vcomp stop     [-root DIR]            kill every session
+  vcomp stop     [-root DIR] [-all]     kill this company's sessions, or every one
 
 Any empty directory is a company waiting to happen:
 
@@ -347,6 +347,10 @@ func runEngine(root string) error {
 		return err
 	}
 	defer e.Close()
+	if err := e.Lock(); err != nil {
+		return err
+	}
+	defer e.Unlock()
 
 	// A result file that is already here was not written by this run's CEO, so
 	// this company is finished rather than finishing.
@@ -454,6 +458,16 @@ func cmdStatus(args []string) error {
 	}
 	defer e.Close()
 	e.Status(os.Stdout)
+
+	// Agents outlive their engine on purpose, which makes it easy to forget
+	// they are there. Say so rather than leaving it to "tmux ls".
+	if others := engine.Orphans(); len(others) > 0 {
+		fmt.Printf("\nRUNNING SESSIONS ON THIS MACHINE\n")
+		for _, s := range others {
+			fmt.Printf("  %s\n", s)
+		}
+		fmt.Printf("\"vcomp stop -all\" ends all of them.\n")
+	}
 	return nil
 }
 
@@ -503,9 +517,14 @@ func cmdReset(args []string) error {
 
 func cmdStop(args []string) error {
 	fs := flag.NewFlagSet("stop", flag.ExitOnError)
+	all := fs.Bool("all", false, "kill every vcomp session on this machine, whatever company")
 	root, err := company(fs, args)
 	if err != nil {
 		return err
+	}
+	if *all {
+		fmt.Printf("killed %d sessions\n", engine.StopPrefix("vcomp"))
+		return nil
 	}
 	e, err := engine.New(root)
 	if err != nil {

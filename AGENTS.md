@@ -295,6 +295,16 @@ Things that look arbitrary and are not, so nobody "fixes" them back:
   forever. Run the whole thing under a scratch company root.
 - Nudges are typed into the TUI as a single line then Enter, so prompts must stay
   one line; a newline would submit early.
+- **Agents outlive their engine, on purpose.** Stopping `vcomp run` leaves the
+  tmux sessions alive so you can pick the company back up with its memory
+  intact - but they keep working unsupervised, with approvals bypassed, and
+  they will do whatever their role implies. A tester handed a web product will
+  start a server and drive a browser. `vcomp status` lists any vcomp sessions
+  running on the machine, and `vcomp stop -all` ends them regardless of which
+  company they belong to.
+- **One engine per company.** `vcomp run` takes a pid lock in `.vcomp/`, because
+  two engines on one company would each prod the same sessions and each read the
+  other's restarts as its own. A lock left by a crash is stale and gets taken.
 - **Roles inherit your own global agent instructions**, by design. A `codex`
   role reads `~/.codex/AGENTS.md` and a `claude` role reads
   `~/.claude/CLAUDE.md` on top of its `role.md`, so your house conventions are
@@ -317,7 +327,7 @@ vcomp status   [-root DIR]
 vcomp reset    [-root DIR] [-y]         start the run over, keeping the settings
 vcomp user-run [-root DIR] [-instructions FILE] [-text "…"]
 vcomp attach   [-root DIR] ROLE
-vcomp stop     [-root DIR]
+vcomp stop     [-root DIR] [-all]
 ```
 
 The whole thing is meant to start like this:

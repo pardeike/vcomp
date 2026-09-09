@@ -11,7 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"vcomp/internal/bootstrap"
@@ -98,6 +101,37 @@ func New(root string) (*Engine, error) {
 
 func (e *Engine) Close() error { return e.logF.Close() }
 
+// lockPath holds the pid of the engine running this company.
+func (e *Engine) lockPath() string {
+	return filepath.Join(config.LocalDir(e.root), "engine.pid")
+}
+
+// Lock claims this company for this process. Two engines on one company would
+// each prod the same sessions and each believe the other's restarts were their
+// own, so the second one refuses rather than fighting.
+func (e *Engine) Lock() error {
+	if b, err := os.ReadFile(e.lockPath()); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) {
+			return fmt.Errorf("an engine is already running this company (pid %d)\n"+
+				"stop it, or run: vcomp stop -root %s", pid, e.root)
+		}
+	}
+	return os.WriteFile(e.lockPath(), fmt.Appendf(nil, "%d\n", os.Getpid()), 0o644)
+}
+
+// Unlock releases the claim. A lock left behind by a crash is stale and the
+// next engine takes it, since the pid in it is gone.
+func (e *Engine) Unlock() { _ = os.Remove(e.lockPath()) }
+
+// alive reports whether a process still exists. Signal 0 checks without sending.
+func alive(pid int) bool {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return p.Signal(syscall.Signal(0)) == nil
+}
+
 func (e *Engine) statePath() string {
 	return filepath.Join(config.LocalDir(e.root), "state.json")
 }
@@ -149,7 +183,9 @@ func (e *Engine) Run(stop <-chan struct{}) bool {
 		select {
 		case <-stop:
 			t.Stop()
-			e.log.Printf("engine stopped (sessions left running; 'vcomp stop' kills them)")
+			e.log.Printf("engine stopped. The agents are still running in tmux, "+
+				"working unsupervised - 'vcomp run -root %s' picks them back up, "+
+				"'vcomp stop -root %s' ends them.", e.root, e.root)
 			return false
 		case <-t.C:
 			if e.Tick() {
@@ -658,15 +694,32 @@ func (e *Engine) ResultFile() string { return e.cfg.ResultFile }
 func (e *Engine) Session(role string) string { return e.cfg.SessionPrefix + "-" + role }
 
 // Stop kills every session this engine owns.
-func (e *Engine) Stop() int {
+func (e *Engine) Stop() int { return StopPrefix(e.cfg.SessionPrefix + "-") }
+
+// StopPrefix kills every session whose name starts with prefix. With the bare
+// "vcomp-" it finds companies whose engine has gone and left its agents
+// running, which is otherwise only discoverable by knowing to run "tmux ls".
+func StopPrefix(prefix string) int {
 	n := 0
 	for _, s := range tmux.List() {
-		if strings.HasPrefix(s, e.cfg.SessionPrefix+"-") {
+		if strings.HasPrefix(s, prefix) {
 			_ = tmux.Kill(s)
 			n++
 		}
 	}
 	return n
+}
+
+// Orphans lists running vcomp sessions that no live engine is supervising.
+func Orphans() []string {
+	var out []string
+	for _, s := range tmux.List() {
+		if strings.HasPrefix(s, "vcomp") {
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Status renders a one-screen view of the company.
