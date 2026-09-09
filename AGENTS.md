@@ -193,6 +193,27 @@ That is the entire engine. Everything else is emergent.
   the agents have to invent it and write it down.
 - No structured message format. `message.md` is prose.
 
+## Decisions worth knowing
+
+Things that look arbitrary and are not, so nobody "fixes" them back:
+
+- **The prompt points at `role.md`; it is not injected into the context.** A
+  nudge is typed into a TUI, so it has to be one line. Making the agent re-read
+  its own `role.md` each time is also what makes firing work: rewrite the file
+  and the next occupant genuinely wakes up as someone else.
+- **Session existence is the liveness check.** A tmux session disappears when
+  its command exits, so "does the session exist" already covers crashed, exited
+  and killed. There is no process supervision beyond that.
+- **The user role's blindness is instruction, not enforcement.** Everything is
+  world-readable by design; a user agent that goes looking for the company can
+  find it. The snapshot in `public/run-*/product/` exists so it has no reason to.
+- **`tmux -t =name` only works for session targets.** Pane targets
+  (`capture-pane`, `send-keys`) take the bare name; the `=` form fails with
+  "can't find pane".
+- **An empty placeholder removes its flag, not just its token.** Dropping only
+  `{{model}}` would leave a dangling `--model` and the harness would refuse to
+  start.
+
 ## Operating notes
 
 - Harnesses run with approvals bypassed (`claude --dangerously-skip-permissions`
@@ -217,6 +238,19 @@ vcomp stop     [-root DIR]
 ```
 
 `./install.sh` builds the binary onto your PATH and runs `vcomp install`.
+
+## Working on this repo
+
+Go, standard library only - no dependencies, and it should stay that way. Keep
+it native and small. Do not overengineer or over-harden: this is a simulation of
+a cooperative company, and the interesting failures are social, not adversarial.
+When something needs a knob, it goes in `default.conf` or a template, not into
+the code.
+
+Tests are for checking assumptions, not for ceremony. Run them when you have
+changed something you are unsure about, not after every edit - the engine suite
+drives real tmux and takes about 17 seconds, so wasteful runs are genuinely
+wasteful.
 
 ## Testing
 
