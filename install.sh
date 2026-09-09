@@ -46,7 +46,12 @@ echo "installed $bin/vcomp"
 # first resolved, so an old build can keep running long after this one lands.
 others=$(
 	echo "$PATH" | tr ':' '\n' | while IFS= read -r d; do
-		[ -n "$d" ] && [ "$d" != "$bin" ] && [ -x "$d/vcomp" ] && echo "  $d/vcomp"
+		# An "if" rather than an && chain: a failing test as the last command in
+		# the loop body would make the whole substitution non-zero, and set -e
+		# would end the script here.
+		if [ -n "$d" ] && [ "$d" != "$bin" ] && [ -x "$d/vcomp" ]; then
+			echo "  $d/vcomp"
+		fi
 	done
 )
 if [ -n "$others" ]; then
