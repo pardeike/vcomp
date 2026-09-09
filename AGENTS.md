@@ -158,13 +158,22 @@ A tick loop (default 20s). Per tick:
 1. Reload settings. Stop if the result file exists.
 2. **Discover** — every `spaces/*/role.md` is an employee.
 3. **Hire** — a space with no session gets one:
-   `tmux new-session -d -s vcomp-<role> -c <space> <harness>`, then a one-line
-   prompt typed into the pane on the following tick, once the TUI has drawn
-   itself. A role we have run before is restarted with the harness's resume flag
-   so it keeps its memory.
+   `tmux new-session -d -s vcomp-<role> -c <space> <harness>`, then the
+   harness's `handshake` keys on the next tick if it has any, then a one-line
+   prompt on the tick after, once the TUI has drawn itself. A role we have run
+   before is restarted with the harness's resume flag so it keeps its memory.
 4. **Fire / rehire** — if `role.md`'s hash changed, kill and restart *without*
-   resume. New person, empty head.
-5. **Revive** — session gone (crashed, exited, killed) → recreate it.
+   resume. New person, empty head. This is the **only** thing that ends a living
+   session: a new model, a new effort, even a different harness never kill one,
+   because the history inside a running session is the entire point of keeping
+   it running. Those changes apply the next time the role has to start anyway.
+5. **Revive** — session gone or its pane exited → recreate it. Panes are kept
+   after their command exits (`remain-on-exit`), so a harness that dies on
+   startup leaves its error behind to be read rather than being restarted
+   forever in silence. The first failure after a resume is treated as "there
+   was nothing to resume" and retried fresh; after `max_restarts` failures the
+   role is marked broken, the command and the pane's last lines are logged
+   once, and it is left alone until `role.md` or the settings change.
 6. **Nudge** — a session whose pane text is byte-identical for N consecutive
    ticks is stuck, so type the nudge prompt at it. Because agents animate while
    thinking, a busy one never looks idle; this needs no harness-specific parsing.
@@ -182,6 +191,11 @@ of filling the time with invented personal projects. Both are settable per role,
 which is the hook for a future version where the CEO — or the project master,
 delegated — throttles a specific idle role by writing to the config the engine
 already re-reads every tick.
+
+**The log is only state changes.** Hired, revived, replaced, exited, broken,
+user run started or finished, goal reached. Nudging is the engine's heartbeat,
+not an event, so it is not logged - anything that repeats every tick without
+something having happened is noise that buries the lines that matter.
 
 That is the entire engine. Everything else is emergent.
 
@@ -207,6 +221,15 @@ Things that look arbitrary and are not, so nobody "fixes" them back:
 - **The user role's blindness is instruction, not enforcement.** Everything is
   world-readable by design; a user agent that goes looking for the company can
   find it. The snapshot in `public/run-*/product/` exists so it has no reason to.
+- **Both harnesses ask "do you trust this folder?" the first time they run in a
+  directory**, with "yes" preselected. Typing a prompt into that dialog answers
+  it wrongly and quits the agent, which used to produce an endless hire-and-die
+  loop that built nothing. That is what `handshake = Enter` is for. It is a
+  per-harness setting rather than engine code because the next harness will ask
+  something else.
+- **A dialog is invisible to idle detection.** A harness sitting on a question
+  looks exactly like a harness thinking, so the engine cannot discover this by
+  watching; it has to be told what to press.
 - **`tmux -t =name` only works for session targets.** Pane targets
   (`capture-pane`, `send-keys`) take the bare name; the `=` form fails with
   "can't find pane".
@@ -221,6 +244,11 @@ Things that look arbitrary and are not, so nobody "fixes" them back:
   forever. Run the whole thing under a scratch company root.
 - Nudges are typed into the TUI as a single line then Enter, so prompts must stay
   one line; a newline would submit early.
+- **Roles inherit your own global agent instructions**, by design. A `codex`
+  role reads `~/.codex/AGENTS.md` and a `claude` role reads
+  `~/.claude/CLAUDE.md` on top of its `role.md`, so your house conventions are
+  company policy too. Useful, and worth remembering when an employee does
+  something nobody in the company asked for.
 - tmux session names are `<session_prefix>-<role>`. Give a second company on the
   same machine a different prefix.
 - `vcomp attach <role>` opens the tmux session so you can watch someone work.

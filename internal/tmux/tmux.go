@@ -46,14 +46,29 @@ func List() []string {
 }
 
 // New starts a detached session named session, with cwd dir, running cmd.
+// The pane is kept after the command exits, so a harness that dies on startup
+// leaves its error message behind to be read instead of vanishing silently.
 func New(session, dir string, cmd []string) error {
 	if len(cmd) == 0 {
 		return errors.New("tmux: empty command")
 	}
 	args := append([]string{"new-session", "-d", "-s", session, "-c", dir, "--"}, cmd...)
-	_, err := run(args...)
+	if _, err := run(args...); err != nil {
+		return err
+	}
+	_, err := run("set-option", "-t", session, "-w", "remain-on-exit", "on")
 	return err
 }
+
+// Dead reports whether the session's command has exited, leaving the pane
+// behind with whatever it printed on its way out.
+func Dead(session string) bool {
+	out, err := run("display-message", "-p", "-t", session, "#{pane_dead}")
+	return err == nil && strings.TrimSpace(out) == "1"
+}
+
+// Alive reports whether the session exists and its command is still running.
+func Alive(session string) bool { return Exists(session) && !Dead(session) }
 
 // Kill removes a session; killing a missing session is not an error.
 func Kill(session string) error {
@@ -67,6 +82,15 @@ func Kill(session string) error {
 // Capture returns the visible text of the session's active pane.
 func Capture(session string) (string, error) {
 	return run("capture-pane", "-p", "-t", session)
+}
+
+// SendKeys sends named tmux keys (Enter, Escape, C-c ...) to the pane.
+func SendKeys(session string, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	_, err := run(append([]string{"send-keys", "-t", session}, keys...)...)
+	return err
 }
 
 // SendLine types one line of text into the pane and presses Enter.

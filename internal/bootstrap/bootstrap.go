@@ -225,6 +225,43 @@ func Init(root string, cfg config.Config) error {
 	return initProduct(set, filepath.Join(root, space.ProductDir))
 }
 
+// EnsureLayout creates any missing infrastructure in a company that already
+// exists - the standard directories, and an inbox for every role - without
+// touching anything that is already there. It returns what it had to make.
+func EnsureLayout(root string) ([]string, error) {
+	dirs := []string{space.SpacesDir, space.PublicDir, space.ProductDir, config.DirName}
+	roles, _ := space.Roles(root)
+	for _, r := range roles {
+		dirs = append(dirs, filepath.Join(space.SpacesDir, r.Name, "inbox"))
+	}
+	var made []string
+	for _, d := range dirs {
+		p := filepath.Join(root, d)
+		if _, err := os.Stat(p); err == nil {
+			continue
+		}
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			return made, err
+		}
+		made = append(made, d)
+	}
+	return made, nil
+}
+
+// Describe summarises what is actually on disk, so that "where did my company
+// go" is answerable without a file manager.
+func Describe(root string) string {
+	roles, _ := space.Roles(root)
+	names := make([]string, 0, len(roles))
+	for _, r := range roles {
+		names = append(names, r.Name)
+	}
+	runs := len(space.Runs(root))
+	return fmt.Sprintf("%s\n  spaces/   %d roles: %s\n  product/  the git repo they build in\n"+
+		"  public/   %d user runs\n  %s/  settings and engine state",
+		root, len(names), strings.Join(names, ", "), runs, config.DirName)
+}
+
 // SyncGoal rewrites the CEO's goal.md when the configured goal no longer
 // matches it, so that changing "goal =" actually reaches the only person who is
 // ever told it. Without this the goal is frozen at creation and a later edit is

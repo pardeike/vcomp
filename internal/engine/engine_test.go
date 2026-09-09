@@ -180,6 +180,51 @@ func TestEmptyInboxIsPacedMoreSlowly(t *testing.T) {
 	}
 }
 
+// Both harnesses ask "do you trust this folder?" the first time they run
+// somewhere, and typing a prompt into that dialog answers it wrongly and quits.
+// A configured handshake is pressed first, on its own tick.
+func TestHandshakeIsSentBeforeTheFirstPrompt(t *testing.T) {
+	_, _, e := company(t, "ceo", "[harness fake]\nhandshake = Enter\n")
+	ceo := prefix + "-ceo"
+
+	tick(t, e) // hire
+	tick(t, e) // handshake, not the prompt
+	if got := pane(t, ceo); strings.Contains(got, "FRESHPROMPT") {
+		t.Fatalf("the prompt must wait until after the handshake, pane:\n%s", got)
+	}
+	tick(t, e) // now the prompt
+	if got := pane(t, ceo); !strings.Contains(got, "FRESHPROMPT") {
+		t.Fatalf("the prompt should follow the handshake, pane:\n%s", got)
+	}
+}
+
+// Changing a model or an effort must not cost a role its memory: only the CEO
+// rewriting role.md ends a living session.
+func TestConfigChangesDoNotKillLiveSessions(t *testing.T) {
+	root, harnessLog, e := company(t, "ceo", "")
+	ceo := prefix + "-ceo"
+
+	tick(t, e)
+	tick(t, e)
+	starts := strings.Count(read(t, harnessLog), "start ")
+
+	conf := filepath.Join(config.LocalDir(root), config.FileName)
+	b, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, append(b, []byte("\n[role ceo]\nidle_ticks = 2\nmodel = something-else\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+	if !tmux.Alive(ceo) {
+		t.Fatal("a settings change must not kill a running session")
+	}
+	if now := strings.Count(read(t, harnessLog), "start "); now != starts {
+		t.Fatalf("the session was restarted (%d -> %d starts) by a settings change", starts, now)
+	}
+}
+
 // A per-role override is how a future CEO throttles one person without slowing
 // the rest of the company down.
 func TestRoleCanBeThrottledIndividually(t *testing.T) {

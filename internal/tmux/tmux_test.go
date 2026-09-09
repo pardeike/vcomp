@@ -37,12 +37,25 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatalf("pane did not receive the line, got:\n%s", out)
 	}
 
-	// A session whose command exits must disappear on its own.
+	// A session whose command exits is kept, but reports itself dead, so that
+	// whatever the command printed on its way out can still be read.
+	if !Alive(s) {
+		t.Fatal("session should be alive while its command runs")
+	}
 	if err := SendLine(s, "exit"); err != nil {
 		t.Fatalf("SendLine exit: %v", err)
 	}
 	time.Sleep(700 * time.Millisecond)
-	if Exists(s) {
-		t.Fatal("session should be gone after its command exited")
+	if !Exists(s) {
+		t.Fatal("the pane should be kept after the command exited")
+	}
+	if !Dead(s) || Alive(s) {
+		t.Fatal("an exited command must report the session as dead")
+	}
+	if out, err := Capture(s); err != nil || !strings.Contains(out, "hello-from-pane") {
+		t.Fatalf("a dead pane must still be readable, got %q %v", out, err)
+	}
+	if err := Kill(s); err != nil || Exists(s) {
+		t.Fatalf("Kill should remove even a dead session: %v", err)
 	}
 }

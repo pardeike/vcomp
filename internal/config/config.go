@@ -59,6 +59,9 @@ type Harness struct {
 	Resume []string
 	Model  string
 	Effort string
+	// Handshake is tmux key names sent once after the session comes up, before
+	// the first prompt - for whatever a harness asks before it will talk.
+	Handshake []string
 }
 
 // Role holds per-person overrides. Zero fields fall back to the defaults.
@@ -79,6 +82,7 @@ type Config struct {
 	IdleTicksEmpty  int
 	UserTimeout     time.Duration
 	UserMaxAttempts int
+	MaxRestarts     int
 
 	SessionPrefix string
 	Goal          string
@@ -220,6 +224,8 @@ func (c *Config) set(kind, name, key, value string) error {
 			h.Model = value
 		case "effort":
 			h.Effort = value
+		case "handshake":
+			h.Handshake = strings.Fields(value)
 		default:
 			return fmt.Errorf("unknown harness key %q", key)
 		}
@@ -284,6 +290,8 @@ func (c *Config) setTop(key, value string) error {
 		return num(&c.IdleTicksEmpty)
 	case "user_max_attempts":
 		return num(&c.UserMaxAttempts)
+	case "max_restarts":
+		return num(&c.MaxRestarts)
 	case "session_prefix":
 		c.SessionPrefix = value
 	case "goal":
@@ -309,6 +317,18 @@ func (c *Config) setTop(key, value string) error {
 func Valid(section, name, key, value string) error {
 	c := empty()
 	return c.set(section, name, key, value)
+}
+
+// HarnessFor names the harness a role runs under. A conversation started in
+// one harness cannot be resumed in another.
+func (c Config) HarnessFor(role string) string {
+	return firstNonEmpty(c.Roles[role].Harness, c.Harness)
+}
+
+// Handshake is the key sequence a role's harness needs before it will accept a
+// prompt, such as answering a first-run trust question.
+func (c Config) Handshake(role string) []string {
+	return c.Harnesses[c.HarnessFor(role)].Handshake
 }
 
 // CommandFor builds the argv that starts a role's agent, applying the role's

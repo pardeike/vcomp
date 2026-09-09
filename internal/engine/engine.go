@@ -22,9 +22,15 @@ import (
 
 type roleState struct {
 	RoleHash   string `json:"roleHash"`
+	Cmd        string `json:"cmd"`     // what we last started; a change makes resuming impossible
 	Started    bool   `json:"started"` // we have run this occupant before, so resume it
+	Harness    string `json:"harness"` // a conversation cannot move between harnesses
+	NeedShake  bool   `json:"needShake"`
 	NeedPrompt bool   `json:"needPrompt"`
 	Resumed    bool   `json:"resumed"` // the pending prompt is a welcome-back, not a hello
+	Fails      int    `json:"fails"`   // consecutive times the harness exited on us
+	Broken     bool   `json:"broken"`  // stop trying until something changes
+	LastErr    string `json:"lastErr"` // so a standing complaint is logged once, not every tick
 	PaneHash   string `json:"-"`
 	Idle       int    `json:"-"`
 }
@@ -32,6 +38,7 @@ type roleState struct {
 type runState struct {
 	Attempts   int       `json:"attempts"`
 	StartedAt  time.Time `json:"startedAt"`
+	NeedShake  bool      `json:"needShake"`
 	NeedPrompt bool      `json:"needPrompt"`
 	PaneHash   string    `json:"-"`
 	Idle       int       `json:"-"`
@@ -193,34 +200,63 @@ func (e *Engine) syncRole(r space.Role) {
 		s = &roleState{}
 		e.st.Roles[r.Name] = s
 	}
+	sess := r.Session(e.cfg.SessionPrefix)
 
-	// A rewritten role.md is the CEO replacing the occupant: kill the session
-	// and come back without the resume flag, so the new person starts blank.
+	// An unusable configuration is reported once and then waited out, since
+	// fixing it has to be enough to bring the role back.
+	start, err := e.cfg.CommandFor(r.Name, false)
+	if err != nil {
+		if s.LastErr != err.Error() {
+			s.LastErr = err.Error()
+			e.log.Printf("%s: %v", r.Name, err)
+		}
+		return
+	}
+	s.LastErr = ""
+	cmd := strings.Join(start, " ")
+
+	// Rewriting role.md is the only thing that ends a living session: the CEO
+	// replacing the occupant. Everything else - a new model, a new effort, a
+	// different harness - waits until the session is gone anyway, because the
+	// history in a running session is the whole point of keeping it running.
 	if s.RoleHash != "" && s.RoleHash != r.Hash {
 		e.log.Printf("%s: role.md rewritten - occupant replaced", r.Name)
-		_ = tmux.Kill(r.Session(e.cfg.SessionPrefix))
+		_ = tmux.Kill(sess)
 		*s = roleState{}
 	}
 	s.RoleHash = r.Hash
 
-	if !tmux.Exists(r.Session(e.cfg.SessionPrefix)) {
-		resume := s.Started
-		cmd, err := e.cfg.CommandFor(r.Name, resume)
-		if err != nil {
-			e.log.Printf("%s: %v", r.Name, err)
-			return
-		}
-		if err := tmux.New(r.Session(e.cfg.SessionPrefix), r.Dir, cmd); err != nil {
-			e.log.Printf("%s: cannot start session: %v", r.Name, err)
-			return
-		}
-		verb := "hired"
-		if resume {
-			verb = "revived"
-		}
-		e.log.Printf("%s: %s (%s)", r.Name, verb, strings.Join(cmd, " "))
-		*s = roleState{RoleHash: r.Hash, Started: true, NeedPrompt: true, Resumed: resume}
-		return // prompt on the next tick, once the harness has drawn itself
+	harness := e.cfg.HarnessFor(r.Name)
+	if s.Harness != "" && s.Harness != harness {
+		s.Started = false // there is no conversation to resume in a new harness
+	}
+	if s.Cmd != "" && s.Cmd != cmd {
+		s.Fails, s.Broken = 0, false // the command changed, so it deserves another go
+	}
+	s.Harness, s.Cmd = harness, cmd
+
+	// A pane whose command exited is kept, so we can say why it died instead of
+	// restarting it forever in silence.
+	if tmux.Exists(sess) && tmux.Dead(sess) {
+		e.roleDied(r.Name, s, sess)
+	}
+	if s.Broken {
+		return
+	}
+
+	if !tmux.Exists(sess) {
+		e.hire(r, s)
+		return
+	}
+	// Surviving a whole tick is what counts as working.
+	s.Fails = 0
+
+	// Answer whatever the harness asks before it will listen, one tick before
+	// the prompt, so the dialog has settled.
+	if s.NeedShake {
+		_ = tmux.SendKeys(sess, e.cfg.Handshake(r.Name))
+		s.NeedShake = false
+		return
 	}
 
 	if s.NeedPrompt {
@@ -228,14 +264,14 @@ func (e *Engine) syncRole(r space.Role) {
 		if s.Resumed {
 			kind = config.PromptBack
 		}
-		e.send(r.Session(e.cfg.SessionPrefix), e.cfg.Prompt(r.Name, kind))
+		e.send(sess, e.cfg.Prompt(r.Name, kind))
 		s.NeedPrompt, s.Idle, s.PaneHash = false, 0, ""
 		return
 	}
 
 	// A pane whose text has not changed at all for several ticks is stuck: a
 	// working agent always animates something.
-	pane, err := tmux.Capture(r.Session(e.cfg.SessionPrefix))
+	pane, err := tmux.Capture(sess)
 	if err != nil {
 		return
 	}
@@ -247,10 +283,77 @@ func (e *Engine) syncRole(r space.Role) {
 	// Someone with nothing in their inbox is left alone for longer.
 	empty := inboxEmpty(r)
 	if threshold := e.cfg.IdleThreshold(r.Name, empty); s.Idle >= threshold {
-		e.log.Printf("%s: idle for %d ticks (inbox empty: %v), nudging", r.Name, s.Idle, empty)
-		e.send(r.Session(e.cfg.SessionPrefix), e.cfg.Prompt(r.Name, config.PromptNudge))
+		// Not logged: nudging is the engine's normal heartbeat, not an event.
+		e.send(sess, e.cfg.Prompt(r.Name, config.PromptNudge))
 		s.Idle, s.PaneHash = 0, ""
 	}
+}
+
+// hire starts a role's session, resuming its previous conversation if it has one.
+func (e *Engine) hire(r space.Role, s *roleState) {
+	resume := s.Started
+	cmd, err := e.cfg.CommandFor(r.Name, resume)
+	if err != nil {
+		e.log.Printf("%s: %v", r.Name, err)
+		return
+	}
+	if err := tmux.New(r.Session(e.cfg.SessionPrefix), r.Dir, cmd); err != nil {
+		e.log.Printf("%s: cannot start session: %v", r.Name, err)
+		return
+	}
+	verb := "hired"
+	if resume {
+		verb = "revived"
+	}
+	e.log.Printf("%s: %s", r.Name, verb)
+	s.Started, s.NeedPrompt, s.Resumed = true, true, resume
+	s.NeedShake = len(e.cfg.Handshake(r.Name)) > 0
+	s.Idle, s.PaneHash = 0, ""
+}
+
+// roleDied handles a harness that exited. The first failure after a resume is
+// almost always "there was nothing to resume", so it retries from scratch;
+// repeated failures mean the command itself is wrong, and hammering it every
+// tick only buries the reason in the log.
+func (e *Engine) roleDied(name string, s *roleState, sess string) {
+	out, _ := tmux.Capture(sess)
+	_ = tmux.Kill(sess)
+	s.Fails++
+	s.NeedShake, s.NeedPrompt = false, false
+
+	switch {
+	case s.Resumed && s.Fails == 1:
+		e.log.Printf("%s: nothing to resume, starting fresh", name)
+		s.Started, s.Resumed = false, false
+	case s.Fails >= e.cfg.MaxRestarts:
+		s.Broken = true
+		e.log.Printf("%s: harness exited %d times, giving up until role.md or the config changes\n"+
+			"    command: %s\n%s", name, s.Fails, s.Cmd, indent(lastLines(out, 8)))
+	case s.Fails == 1:
+		e.log.Printf("%s: session exited, restarting", name)
+	}
+}
+
+// lastLines returns the tail of a dead pane: the part that says what went wrong.
+func lastLines(out string, n int) []string {
+	var kept []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.TrimSpace(l) != "" {
+			kept = append(kept, strings.TrimRight(l, " "))
+		}
+	}
+	if len(kept) > n {
+		kept = kept[len(kept)-n:]
+	}
+	return kept
+}
+
+func indent(lines []string) string {
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString("    | " + l + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // inboxEmpty reports whether anyone has asked this role for anything.
@@ -275,7 +378,11 @@ func (e *Engine) syncRuns() {
 			rs = &runState{}
 			e.st.Runs[run.Name] = rs
 		}
-		alive := tmux.Exists(run.Session(e.cfg.SessionPrefix))
+		sess := run.Session(e.cfg.SessionPrefix)
+		if tmux.Exists(sess) && tmux.Dead(sess) {
+			_ = tmux.Kill(sess) // the user's agent exited; the pane was kept
+		}
+		alive := tmux.Alive(sess)
 
 		if run.Done() {
 			if alive {
@@ -317,6 +424,7 @@ func (e *Engine) syncRuns() {
 		rs.Attempts++
 		rs.StartedAt = time.Now()
 		rs.NeedPrompt, rs.Idle, rs.PaneHash = true, 0, ""
+		rs.NeedShake = len(e.cfg.Handshake("")) > 0
 		e.log.Printf("%s: user run started (attempt %d)", run.Name, rs.Attempts)
 	}
 }
@@ -324,6 +432,11 @@ func (e *Engine) syncRuns() {
 // pokeUser drives a live user session: prompt it, nudge it if it stalls, and
 // kill it if it overruns.
 func (e *Engine) pokeUser(run space.Run, rs *runState) {
+	if rs.NeedShake {
+		_ = tmux.SendKeys(run.Session(e.cfg.SessionPrefix), e.cfg.Handshake(""))
+		rs.NeedShake = false
+		return
+	}
 	if rs.NeedPrompt {
 		e.send(run.Session(e.cfg.SessionPrefix), e.cfg.Prompt("", config.PromptUser))
 		rs.NeedPrompt, rs.Idle, rs.PaneHash = false, 0, ""
@@ -441,15 +554,21 @@ func (e *Engine) Status(w io.Writer) {
 	}
 	for _, r := range roles {
 		status := "stopped"
-		if tmux.Exists(r.Session(e.cfg.SessionPrefix)) {
+		if tmux.Alive(r.Session(e.cfg.SessionPrefix)) {
 			status = "running"
 		}
 		n := 0
 		if entries, err := os.ReadDir(r.Inbox()); err == nil {
 			n = len(entries)
 		}
-		cmd, _ := e.cfg.CommandFor(r.Name, false)
-		fmt.Fprintf(w, "  %-16s %-8s inbox:%-3d %s\n", r.Name, status, n, strings.Join(cmd, " "))
+		harness := ""
+		if cmd, err := e.cfg.CommandFor(r.Name, false); err == nil && len(cmd) > 0 {
+			harness = cmd[0]
+		}
+		if s := e.st.Roles[r.Name]; s != nil && s.Broken {
+			status = "broken"
+		}
+		fmt.Fprintf(w, "  %-16s %-8s inbox:%-3d %s\n", r.Name, status, n, harness)
 	}
 
 	fmt.Fprintf(w, "\nPUBLIC RUNS\n")
@@ -465,7 +584,7 @@ func (e *Engine) Status(w io.Writer) {
 			status = "impressions written"
 		case run.GivenUp():
 			status = "abandoned"
-		case tmux.Exists(run.Session(e.cfg.SessionPrefix)):
+		case tmux.Alive(run.Session(e.cfg.SessionPrefix)):
 			status = "user in session"
 		}
 		fmt.Fprintf(w, "  %-12s %s\n", run.Name, status)

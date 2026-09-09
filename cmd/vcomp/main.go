@@ -215,7 +215,11 @@ func setupCompany(root string) error {
 	}
 	dest := filepath.Join(local, config.FileName)
 	if len(overrides) == 0 {
-		fmt.Printf("\nNothing differs from the inherited settings; no %s written.\n", dest)
+		if _, err := os.Stat(dest); err == nil {
+			fmt.Printf("\nNo answers changed, so %s is left as it is.\n", dest)
+		} else {
+			fmt.Printf("\nNo answers differ from the inherited settings, so no %s was written.\n", dest)
+		}
 	} else {
 		if err := os.WriteFile(dest, []byte(config.RenderOverrides(overrides)), 0o644); err != nil {
 			return err
@@ -234,15 +238,21 @@ func setupCompany(root string) error {
 		}
 		if changed {
 			fmt.Println("the CEO has been given the new goal")
-		} else {
-			fmt.Println("company already exists; nothing else to do")
 		}
+		made, err := bootstrap.EnsureLayout(root)
+		if err != nil {
+			return err
+		}
+		if len(made) > 0 {
+			fmt.Printf("restored missing directories: %s\n", strings.Join(made, ", "))
+		}
+		fmt.Printf("\n%s\n", bootstrap.Describe(root))
 		return nil
 	}
 	if err := bootstrap.Init(root, cfg); err != nil {
 		return err
 	}
-	fmt.Printf("company created: %s\n", strings.Join(cfg.Roster, ", "))
+	fmt.Printf("\n%s\n", bootstrap.Describe(root))
 	return nil
 }
 
