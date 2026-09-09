@@ -42,10 +42,24 @@ echo "installed $bin/vcomp"
 
 "$bin/vcomp" install "$@"
 
-if on_path "$bin"; then
+# A second copy left on the PATH is worse than none: shells hash the path they
+# first resolved, so an old build can keep running long after this one lands.
+others=$(
+	echo "$PATH" | tr ':' '\n' | while IFS= read -r d; do
+		[ -n "$d" ] && [ "$d" != "$bin" ] && [ -x "$d/vcomp" ] && echo "  $d/vcomp"
+	done
+)
+if [ -n "$others" ]; then
 	echo
+	echo "warning: other vcomp binaries are on your PATH:"
+	echo "$others"
+	echo "Delete them, or your shell may keep running one of those instead."
+fi
+
+echo
+if on_path "$bin"; then
+	echo "Run 'rehash' (zsh) or 'hash -r' (bash) if vcomp still behaves like an old build."
 	echo "Ready. Try:  mkdir /tmp/vgame && cd /tmp/vgame && vcomp"
 else
-	echo
 	echo "note: $bin is not on your PATH - add it, or set BIN_DIR to a directory that is."
 fi
