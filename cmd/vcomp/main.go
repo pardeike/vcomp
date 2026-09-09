@@ -498,6 +498,10 @@ func cmdReset(args []string) error {
 		return err
 	}
 
+	cfg, err = bootstrap.RetainGoal(root, cfg)
+	if err != nil {
+		return err
+	}
 	if err := bootstrap.Validate(root, cfg); err != nil {
 		return err
 	}

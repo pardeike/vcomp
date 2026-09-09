@@ -129,6 +129,9 @@ Each employee's `role.json` holds the composition inputs. The engine regenerates
 content. A manual edit to generated role.md is repaired; it cannot replace the
 profession. Missing generated documents are recreated from their inputs. Agent
 authority remains a prompt convention, not filesystem permissions or a sandbox.
+Older rendered roles are converted using their profession and backstory, with
+the original kept as `role.previous.md`. Unknown professions need an explicit
+catalogue choice. Older flag-only goals are recovered before reset.
 
 `standing.md` supplies the shared internal monologue in `notes.md`, concrete
 outward communication, useful work when the inbox is empty, and personal goals

@@ -38,7 +38,7 @@ func (e *Engine) syncRole(r space.Role) {
 		s = &roleState{}
 		e.st.Roles[r.Name] = s
 	}
-	defer func() { e.remember(s.Session, s) }()
+	defer func() { e.remember(s.Session, "role", r.Name, s) }()
 	refreshed, err := bootstrap.RefreshRole(e.root, e.cfg, r.Name)
 	if err != nil {
 		e.roleError(r.Name, s, err)
@@ -51,7 +51,7 @@ func (e *Engine) syncRole(r space.Role) {
 		e.roleError(r.Name, s, err)
 		return
 	}
-	if pane.Exists && tmux.Option(sess, "@vcomp-root") != e.root {
+	if pane.Exists && sessionRoot(sess) != e.root {
 		e.roleError(r.Name, s, fmt.Errorf("session %s belongs to another company or was not created by vcomp; choose another session_prefix", sess))
 		return
 	}

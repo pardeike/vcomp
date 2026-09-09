@@ -283,7 +283,7 @@ func (e *Engine) Stop() (int, error) {
 	n := 0
 	var errs []error
 	for _, sess := range tmux.List() {
-		if tmux.Option(sess, "@vcomp-root") != e.root {
+		if sessionRoot(sess) != e.root {
 			continue
 		}
 		if err := tmux.Kill(sess); err != nil {
@@ -299,7 +299,7 @@ func (e *Engine) Stop() (int, error) {
 func Orphans() []string {
 	var out []string
 	for _, s := range tmux.List() {
-		if tmux.Option(s, "@vcomp-root") != "" {
+		if sessionRoot(s) != "" {
 			out = append(out, s)
 		}
 	}

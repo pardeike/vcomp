@@ -48,6 +48,9 @@ type Set struct{ dirs []string }
 // Unrecognised names need an explicit catalogue position.
 func (s Set) Archetype(name string) string {
 	base := numberSuffix.ReplaceAllString(name, "")
+	if base == "project-master" {
+		base = "project-manager"
+	}
 	if _, err := s.read(path.Join(PositionsDir, base+".md")); err == nil {
 		return base
 	}
@@ -486,7 +489,44 @@ func Steer(root string, cfg config.Config, name, text string) error {
 // RefreshRole repairs edits to the generated document and applies edited inputs.
 func RefreshRole(root string, cfg config.Config, name string) (space.Role, error) {
 	spec, err := readRole(root, name)
-	if err != nil {
+	if os.IsNotExist(err) {
+		// Older companies had only a rendered document. Retain its backstory,
+		// select a real profession, and keep the original for the user's records.
+		p := filepath.Join(root, space.SpacesDir, name, space.RoleFile)
+		old, readErr := os.ReadFile(p)
+		if readErr != nil {
+			return space.Role{}, readErr
+		}
+		spec.Position = Load(root).Archetype(name)
+		if spec.Position == "" {
+			heading, _, _ := strings.Cut(string(old), "\n")
+			_, title, ok := strings.Cut(heading, " — ")
+			if ok {
+				for _, p := range Load(root).Positions() {
+					if p.Title == title {
+						spec.Position = p.Name
+						break
+					}
+				}
+			}
+		}
+		if spec.Position == "" {
+			return space.Role{}, fmt.Errorf("%s needs a catalogue profession; use vcomp hire %s -root %s -position POSITION -replace", name, name, root)
+		}
+		if _, rest, ok := strings.Cut(string(old), "## You are\n"); ok {
+			background, _, _ := strings.Cut(rest, "\n## ")
+			spec.Backstory = strings.TrimSpace(background)
+		}
+		backup := filepath.Join(filepath.Dir(p), "role.previous.md")
+		if _, err := os.Stat(backup); os.IsNotExist(err) {
+			if err := space.WriteFile(backup, old, 0644); err != nil {
+				return space.Role{}, err
+			}
+		}
+		if err := writeRole(root, cfg, name, spec); err != nil {
+			return space.Role{}, err
+		}
+	} else if err != nil {
 		return space.Role{}, err
 	}
 	doc, err := renderRole(root, cfg, name, spec)
@@ -672,4 +712,35 @@ func initProduct(set Set, dir string) error {
 		return err
 	}
 	return git("commit", "-q", "-m", "empty product")
+}
+
+// RetainGoal recovers flag-only goals from pre-composition companies before a
+// reset. Match the configured template exactly rather than guessing at prose.
+func RetainGoal(root string, cfg config.Config) (config.Config, error) {
+	if strings.TrimSpace(cfg.Goal) != "" {
+		return cfg, nil
+	}
+	tmpl, err := Load(root).read("goal.md")
+	if err != nil {
+		return cfg, err
+	}
+	before, after, ok := strings.Cut(expandCompany(tmpl, cfg), "{{GOAL}}")
+	b, err := os.ReadFile(filepath.Join(root, space.SpacesDir, "ceo", "goal.md"))
+	if err != nil {
+		return cfg, err
+	}
+	doc := string(b)
+	if !ok || !strings.HasPrefix(doc, before) || !strings.HasSuffix(doc, after) || len(doc) < len(before)+len(after) {
+		return cfg, fmt.Errorf("set a goal in vcomp setup before resetting this company")
+	}
+	cfg.Goal = strings.TrimSpace(doc[len(before) : len(doc)-len(after)])
+	if cfg.Goal == "" {
+		return cfg, fmt.Errorf("a goal is required before resetting this company")
+	}
+	file := filepath.Join(config.DirName, "goal.txt")
+	if err := space.WriteFile(filepath.Join(root, file), []byte(cfg.Goal), 0644); err != nil {
+		return cfg, err
+	}
+	err = config.UpdateLocal(root, []config.Override{{Key: "goal_file", Value: file}})
+	return cfg, err
 }

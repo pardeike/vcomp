@@ -483,3 +483,62 @@ func TestResetValidatesBeforeDeletingAndRetainsFlagGoal(t *testing.T) {
 		t.Fatal("company was not rebuilt")
 	}
 }
+
+func TestOlderRoleAndFlagGoalAreRetained(t *testing.T) {
+	hermetic(t)
+	root := t.TempDir()
+	cfg := settings("older goal", "ceo", "developer")
+	if err := Init(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	role := filepath.Join(root, "spaces/developer/role.md")
+	old, _ := os.ReadFile(role)
+	os.Remove(filepath.Join(root, "spaces/developer/role.json"))
+	if _, err := RefreshRole(root, cfg, "developer"); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := readRole(root, "developer")
+	if err != nil || spec.Position != "developer" || spec.Backstory == "" {
+		t.Fatalf("conversion lost role inputs: %+v %v", spec, err)
+	}
+	backup, _ := os.ReadFile(filepath.Join(root, "spaces/developer/role.previous.md"))
+	if string(backup) != string(old) {
+		t.Fatal("original role not retained")
+	}
+	os.Remove(filepath.Join(config.LocalDir(root), config.FileName))
+	os.Remove(filepath.Join(config.LocalDir(root), "goal.txt"))
+	cfg.Goal = ""
+	restored, err := RetainGoal(root, cfg)
+	if err != nil || restored.Goal != "older goal" {
+		t.Fatalf("old goal lost: %q %v", restored.Goal, err)
+	}
+	if err := Reset(root, restored); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDocumentedCatalogueMatchesTemplates(t *testing.T) {
+	text := config.DefaultText()
+	start := strings.Index(text, "# Available built-in professions:")
+	end := strings.Index(text[start:], "# Run \"vcomp roles\"") + start
+	documented := strings.NewReplacer("#", "", "\n", " ").Replace(text[start+len("# Available built-in professions:") : end])
+	names := strings.FieldsFunc(documented, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+	positions := Builtin().Positions()
+	if len(names) != len(positions) {
+		t.Fatalf("documented %d roles, catalogue has %d", len(names), len(positions))
+	}
+	for _, p := range positions {
+		found := false
+		for _, name := range names {
+			if name == p.Name {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("undocumented profession %s", p.Name)
+		}
+	}
+	if strings.Join(config.Default().Roster, ", ") != "ceo, project-manager, developer, designer, art-director, tester" {
+		t.Fatal("default roster changed")
+	}
+}

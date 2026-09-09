@@ -35,7 +35,7 @@ func (e *Engine) syncRuns() {
 				}
 				delete(e.st.Runs, name)
 			} else if s != nil {
-				e.remember(s.Session, s)
+				e.remember(s.Session, "run", name, s)
 			}
 		}
 	}()
@@ -47,7 +47,7 @@ func (e *Engine) syncRuns() {
 			e.st.Runs[run.Name] = rs
 		}
 		sess := e.runSession(run)
-		if tmux.Exists(sess) && tmux.Option(sess, "@vcomp-root") != e.root {
+		if tmux.Exists(sess) && sessionRoot(sess) != e.root {
 			e.notice("run-error/"+run.Name, fmt.Sprintf("%s: session name belongs to another company", run.Name))
 			continue
 		}

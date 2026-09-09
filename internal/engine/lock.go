@@ -35,9 +35,21 @@ func (e *Engine) Lock() error {
 		f.Close()
 		return fmt.Errorf("company already has an engine or maintenance operation: %w", err)
 	}
+	// Older engines used a plain PID file without a kernel lock. Do not take
+	// their company while that process is still alive during an upgrade.
+	b, _ := os.ReadFile(e.lockPath())
+	fields := strings.Fields(string(b))
+	if len(fields) == 1 {
+		pid, _ := strconv.Atoi(fields[0])
+		if pid > 0 && syscall.Kill(pid, 0) == nil {
+			syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			f.Close()
+			return fmt.Errorf("an older engine may still own this company (pid %d); stop that engine before using this version", pid)
+		}
+	}
 	e.lockF = f
 	if err = f.Truncate(0); err == nil {
-		_, err = f.WriteAt(fmt.Appendf(nil, "%d\n", os.Getpid()), 0)
+		_, err = f.WriteAt(fmt.Appendf(nil, "%d\nvcomp-lock\n", os.Getpid()), 0)
 	}
 	if err == nil {
 		err = os.MkdirAll(filepath.Dir(e.registryPath()), 0755)
@@ -81,7 +93,11 @@ func (e *Engine) StopAndLock() error {
 		if err != nil {
 			return err
 		}
-		pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+		fields := strings.Fields(string(b))
+		pid := 0
+		if len(fields) > 0 {
+			pid, _ = strconv.Atoi(fields[0])
+		}
 		if pid > 0 && pid != os.Getpid() && pid != signalled {
 			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 				return err
@@ -106,7 +122,7 @@ func CompanyRoots() []string {
 		}
 	}
 	for _, sess := range tmux.List() {
-		if root := tmux.Option(sess, "@vcomp-root"); root != "" {
+		if root := sessionRoot(sess); root != "" {
 			roots[root] = true
 		}
 	}
@@ -119,10 +135,31 @@ func CompanyRoots() []string {
 
 func (e *Engine) recoverSessions() {
 	for _, sess := range tmux.List() {
-		if tmux.Option(sess, "@vcomp-root") != e.root {
+		if sessionRoot(sess) != e.root {
 			continue
 		}
 		name := tmux.Option(sess, "@vcomp-name")
+		if tmux.Option(sess, "@vcomp-kind") == "" {
+			dir := tmux.StartDir(sess)
+			name = filepath.Base(dir)
+			if filepath.Base(filepath.Dir(dir)) == space.SpacesDir {
+				s := e.st.Roles[name]
+				if s == nil {
+					b, _ := os.ReadFile(filepath.Join(dir, space.RoleFile))
+					s = &roleState{Started: true, Harness: e.cfg.HarnessFor(name), RoleHash: space.Hash(b)}
+				}
+				s.Session = sess
+				e.st.Roles[name] = s
+			} else {
+				s := e.st.Runs[name]
+				if s == nil {
+					s = &runState{Attempts: 1, StartedAt: time.Now()}
+				}
+				s.Session = sess
+				e.st.Runs[name] = s
+			}
+			continue
+		}
 		raw := tmux.Option(sess, "@vcomp-state")
 		switch tmux.Option(sess, "@vcomp-kind") {
 		case "role":
@@ -146,12 +183,20 @@ func (e *Engine) metadata(kind, name string, st any) map[string]string {
 	return map[string]string{"@vcomp-root": e.root, "@vcomp-kind": kind, "@vcomp-name": name, "@vcomp-state": string(b)}
 }
 
-func (e *Engine) remember(sess string, st any) {
+func (e *Engine) remember(sess, kind, name string, st any) {
 	if sess == "" {
 		return
 	}
-	if !tmux.Exists(sess) || tmux.Option(sess, "@vcomp-root") != e.root {
+	if !tmux.Exists(sess) || sessionRoot(sess) != e.root {
 		return
+	}
+	if tmux.Option(sess, "@vcomp-root") == "" {
+		for k, v := range e.metadata(kind, name, st) {
+			if err := tmux.SetOption(sess, k, v); err != nil {
+				e.log.Printf("cannot adopt %s: %v", sess, err)
+				return
+			}
+		}
 	}
 	b, err := json.Marshal(st)
 	if err == nil {
@@ -165,8 +210,49 @@ func (e *Engine) killSession(sess string) error {
 	if !tmux.Exists(sess) {
 		return nil
 	}
-	if tmux.Option(sess, "@vcomp-root") != e.root {
+	if sessionRoot(sess) != e.root {
 		return fmt.Errorf("session %s is not owned by this company", sess)
 	}
 	return tmux.Kill(sess)
+}
+
+// sessionRoot recognizes tagged sessions and the older layout. A legacy pane
+// must have started in a real company space and have that company's session
+// name; a similar prefix alone never establishes ownership.
+func sessionRoot(sess string) string {
+	if root := tmux.Option(sess, "@vcomp-root"); root != "" {
+		return root
+	}
+	dir := tmux.StartDir(sess)
+	if dir == "" {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	root := filepath.Dir(filepath.Dir(dir))
+	cfg, err := config.Load(root)
+	if err != nil {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(root, config.DirName)); err != nil {
+		return ""
+	}
+	name := filepath.Base(dir)
+	switch filepath.Base(filepath.Dir(dir)) {
+	case space.SpacesDir:
+		if sess != cfg.SessionPrefix+"-"+name {
+			return ""
+		}
+	case space.PublicDir:
+		if !strings.HasPrefix(name, "run-") || sess != cfg.SessionPrefix+"-user-"+name {
+			return ""
+		}
+	default:
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(dir, space.RoleFile)); err != nil {
+		return ""
+	}
+	return root
 }

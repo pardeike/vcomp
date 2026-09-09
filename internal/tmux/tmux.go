@@ -201,3 +201,13 @@ func SendLine(session, text string) error {
 	_, err = run("send-keys", "-t", pane, "Enter")
 	return err
 }
+
+// StartDir remains stable even after the agent changes its working directory.
+func StartDir(session string) string {
+	pane, err := target(session)
+	if err != nil {
+		return ""
+	}
+	out, _ := run("display-message", "-p", "-t", pane, "#{pane_start_path}")
+	return strings.TrimSpace(out)
+}

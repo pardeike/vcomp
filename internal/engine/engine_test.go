@@ -650,3 +650,42 @@ func TestOutputReportsChangesEvenWithoutStateFile(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestOlderUntaggedSessionIsRecovered(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	session := e.Session("ceo")
+	if err := tmux.New(session, filepath.Join(root, "spaces/ceo"), []string{"/bin/cat"}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	if next.Session("ceo") != session || !next.st.Roles["ceo"].Started {
+		t.Fatal("legacy conversation was not recovered")
+	}
+	tick(t, next)
+	if tmux.Option(session, "@vcomp-root") != next.root {
+		t.Fatal("legacy session was not tagged after adoption")
+	}
+	if _, err := next.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if tmux.Exists(session) {
+		t.Fatal("legacy session survived stop")
+	}
+}
+
+func TestLegacyPidLockIsNotOverwritten(t *testing.T) {
+	_, _, e := company(t, "ceo", "")
+	original := fmt.Sprintf("%d\n", os.Getpid())
+	os.WriteFile(e.lockPath(), []byte(original), 0644)
+	if err := e.Lock(); err == nil {
+		t.Fatal("took over a company with a live legacy PID")
+	}
+	b, _ := os.ReadFile(e.lockPath())
+	if string(b) != original {
+		t.Fatal("legacy owner record was overwritten")
+	}
+}
