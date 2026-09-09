@@ -22,6 +22,7 @@ import (
 const usage = `vcomp - a virtual company of AI agents
 
   vcomp                                 set this directory up if needed, then run it
+  vcomp start    [-root DIR]            the same thing, named
   vcomp install  [-force]               write the defaults to ~/.vcomp/
   vcomp setup    [-root DIR]            ask for settings, save only what differs
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
