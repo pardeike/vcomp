@@ -106,6 +106,20 @@ templates exist**, never a list in the Go:
 
 Adding a role is adding a file. Nothing in the engine has to know.
 
+**A role is a profession plus a flavour, and only the flavour varies.** The
+profession - the remit and the bias - is shared by everyone of that type and is
+byte-identical every time. The flavour is a background from the sector pool plus
+one personality trait from `traits.md`, picked deterministically from the name,
+so `designer-1` and `designer-2` are reliably different people who nonetheless
+agree on what a designer does.
+
+That split is what makes hiring at runtime safe. `vcomp hire <name> -position
+<p> -backstory "..."` composes a role.md from the same templates, so a role
+invented mid-run by the CEO or by HR cannot drift away from how roles work:
+whoever invents it writes only the background. Free-writing a role.md still
+works - it is just a file - but it is how a company slowly forgets what its own
+roles are for.
+
 `standing.md` is where the interesting part lives. It gives every role:
 
 - **an internal dialog** — a private monologue in `notes.md`: what am I for, who
@@ -205,6 +219,30 @@ which is the hook for a future version where the CEO — or the project master,
 delegated — throttles a specific idle role by writing to the config the engine
 already re-reads every tick.
 
+**The state file.** Every tick the engine rewrites `STATE.md` in the company
+root: per role its session, inbox depth, idle ticks and when its space last
+changed, plus the product's commit count and last commit, and the public run
+tally. Nobody is sent it. It is deliberately pull, not push - an overview pushed
+into a prompt is just something else filling a context window, and the whole
+communication design here is that you go and look. It exists mainly so the CEO
+can spot a bottleneck (an inbox that keeps growing) or a passenger (a space that
+has not changed while the product has) without reading six directories.
+
+**The audit trail.** Every message that passes through an inbox is appended to
+`.vcomp/messages.jsonl` as one JSON object per event: `sent`, `updated`,
+`cleared`, with the prose, the recipient, the `From:` line if there is one, how
+deep that inbox was at the time, and how long the message sat there before it
+went. Attachments are counted, not copied - they are already in the repo.
+
+The engine **remembers rather than intercepts**. Agents create and delete inbox
+folders directly, which is the entire communication design, and putting the
+engine in the middle of it would change the thing being measured. So each tick
+it reads the inboxes, records what it has not seen, and notices what has gone; a
+message seen once is preserved even if its folder is deleted a second later. The
+honest gap is one tick wide: a message created and deleted inside a single tick
+is never observed, and a message that short-lived was not read by its recipient
+either.
+
 **The log is only state changes.** Hired, revived, replaced, exited, broken,
 user run started or finished, goal reached. Nudging is the engine's heartbeat,
 not an event, so it is not logged - anything that repeats every tick without
@@ -273,6 +311,8 @@ vcomp                                   set this directory up if needed, then ru
 vcomp install  [-force]                 write the defaults to ~/.vcomp/
 vcomp setup    [-root DIR]              ask for settings, save only what differs
 vcomp run      [-root DIR] [-goal "…"]  keep the company alive (foreground)
+vcomp roles    [-root DIR]              the role names a roster can contain
+vcomp hire     NAME [-position P] [-backstory "…"] [-replace]
 vcomp status   [-root DIR]
 vcomp reset    [-root DIR] [-y]         start the run over, keeping the settings
 vcomp user-run [-root DIR] [-instructions FILE] [-text "…"]

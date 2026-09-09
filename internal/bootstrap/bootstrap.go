@@ -92,46 +92,88 @@ func (s Set) Text(name string, vars map[string]string) (string, error) {
 	return doc, nil
 }
 
-// Backstory picks one of a pool's backgrounds, deterministically from the
-// role's name, so a given name always gets the same person.
+// A role's identity is two separable things: the profession, which is shared by
+// everyone of that type and is identical every time, and the flavour, which
+// varies per person. Only the second is allowed to vary, which is what keeps
+// roles invented at runtime from drifting away from how roles should work.
+
+// Backstory is the flavour half: a background plus one personality trait,
+// chosen deterministically from the role's name, so a given name is always the
+// same person and two designers are reliably different ones.
 func (s Set) Backstory(name string) string {
-	return s.backstoryFrom(s.Archetype(name), name)
+	return s.flavour(s.Archetype(name), name)
 }
 
-func (s Set) backstoryFrom(pool, name string) string {
-	text, err := s.read(path.Join("backstories", pool+".txt"))
+func (s Set) flavour(pool, name string) string {
+	background := pick(s.lines(path.Join("backstories", pool+".txt")), name)
+	trait := pick(s.lines("traits.md"), name+"/trait")
+	return strings.TrimSpace(background + " " + trait)
+}
+
+func (s Set) lines(file string) []string {
+	text, err := s.read(file)
 	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, l := range strings.Split(strings.TrimSpace(text), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// pick chooses deterministically, so the same name always gets the same person.
+func pick(options []string, seed string) string {
+	if len(options) == 0 {
 		return ""
 	}
-	lines := strings.Split(strings.TrimSpace(text), "\n")
 	h := fnv.New32a()
-	h.Write([]byte(name))
-	return strings.TrimSpace(lines[int(h.Sum32())%len(lines)])
+	h.Write([]byte(seed))
+	return options[int(h.Sum32())%len(options)]
 }
 
 // RoleDoc renders the role.md for a new employee. A role with its own template
 // uses it; a catalogue position is rendered through the shared frame, with a
 // backstory drawn from its sector.
 func (s Set) RoleDoc(name string) (string, error) {
+	return s.RoleDocAs(name, "", "")
+}
+
+// RoleDocAs renders a role.md, optionally forcing which profession the person
+// holds and what their background is. The remit and the standing behaviour
+// still come from the shared templates either way.
+func (s Set) RoleDocAs(name, position, backstory string) (string, error) {
 	standing, err := s.read("standing.md")
 	if err != nil {
 		return "", err
 	}
-	arch := s.Archetype(name)
+	arch := position
+	if arch == "" {
+		arch = s.Archetype(name)
+	}
+	flavour := backstory
 
 	if body, err := s.read(path.Join(PositionsDir, arch+".md")); err == nil {
 		title, sector, remit := splitPosition(body)
+		if flavour == "" {
+			flavour = s.flavour(sector, name)
+		}
 		return s.Text("role_position.md", map[string]string{
 			"NAME":      name,
 			"TITLE":     title,
-			"BACKSTORY": wrap(s.backstoryFrom(sector, name), 78),
+			"BACKSTORY": wrap(flavour, 78),
 			"REMIT":     remit,
 			"STANDING":  standing,
 		})
 	}
+	if flavour == "" {
+		flavour = s.flavour(arch, name)
+	}
 	return s.Text("role_"+arch+".md", map[string]string{
 		"NAME":      name,
-		"BACKSTORY": wrap(s.Backstory(name), 78),
+		"BACKSTORY": wrap(flavour, 78),
 		"STANDING":  standing,
 	})
 }
@@ -297,7 +339,10 @@ func Init(root string, cfg config.Config) error {
 	}
 	set := Load(root)
 
-	conventions, err := set.Text("CONVENTIONS.md", map[string]string{"RESULT": cfg.ResultFile})
+	conventions, err := set.Text("CONVENTIONS.md", map[string]string{
+		"RESULT": cfg.ResultFile,
+		"STATE":  cfg.StateFile,
+	})
 	if err != nil {
 		return err
 	}
@@ -314,8 +359,7 @@ func Init(root string, cfg config.Config) error {
 		if err != nil {
 			return err
 		}
-		doc = strings.ReplaceAll(doc, "{{RESULT}}", cfg.ResultFile)
-		if err := os.WriteFile(filepath.Join(dir, space.RoleFile), []byte(doc), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, space.RoleFile), []byte(expandCompany(doc, cfg)), 0o644); err != nil {
 			return err
 		}
 	}
@@ -323,6 +367,7 @@ func Init(root string, cfg config.Config) error {
 	goalDoc, err := set.Text("goal.md", map[string]string{
 		"GOAL":   cfg.Goal,
 		"RESULT": cfg.ResultFile,
+		"STATE":  cfg.StateFile,
 	})
 	if err != nil {
 		return err
@@ -331,6 +376,40 @@ func Init(root string, cfg config.Config) error {
 		return err
 	}
 	return initProduct(set, filepath.Join(root, space.ProductDir))
+}
+
+// Hire writes a new role into a company from its two parts: a profession from
+// the shared catalogue and a personal background. Composing it here rather than
+// letting the document be written freehand is what stops a company's idea of
+// what a role is from drifting as it invents new ones.
+func Hire(root string, cfg config.Config, name, position, backstory string, replace bool) error {
+	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
+		return fmt.Errorf("%q is not a usable role name", name)
+	}
+	dir := filepath.Join(root, space.SpacesDir, name)
+	rolePath := filepath.Join(dir, space.RoleFile)
+	if _, err := os.Stat(rolePath); err == nil && !replace {
+		return fmt.Errorf("%s already exists; -replace ends whoever is in it", rolePath)
+	}
+	set := Load(root)
+	if position != "" && set.Archetype(strings.TrimSuffix(position, ".md")) == "generic" && position != "generic" {
+		return fmt.Errorf("no such position %q (try: vcomp roles)", position)
+	}
+	doc, err := set.RoleDocAs(name, position, backstory)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "inbox"), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(rolePath, []byte(expandCompany(doc, cfg)), 0o644)
+}
+
+// expandCompany fills in the placeholders that depend on this company's
+// settings rather than on the role.
+func expandCompany(doc string, cfg config.Config) string {
+	doc = strings.ReplaceAll(doc, "{{RESULT}}", cfg.ResultFile)
+	return strings.ReplaceAll(doc, "{{STATE}}", cfg.StateFile)
 }
 
 // EnsureLayout creates any missing infrastructure in a company that already
@@ -383,8 +462,10 @@ func Produced(root string, cfg config.Config) []string {
 		filepath.Join(config.LocalDir(root), "state.json"),
 		filepath.Join(config.LocalDir(root), "engine.log"),
 	}
-	if cfg.ResultFile != "" {
-		paths = append(paths, filepath.Join(root, cfg.ResultFile))
+	for _, f := range []string{cfg.ResultFile, cfg.StateFile, cfg.AuditFile} {
+		if f != "" {
+			paths = append(paths, filepath.Join(root, f))
+		}
 	}
 	var present []string
 	for _, p := range paths {

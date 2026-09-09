@@ -46,9 +46,18 @@ type runState struct {
 	Idle       int       `json:"-"`
 }
 
+// msgState is what the audit trail remembers about a message still sitting in
+// an inbox, so that a deletion can be dated and its content is never lost.
+type msgState struct {
+	Hash  string    `json:"hash"`
+	First time.Time `json:"first"`
+}
+
 type state struct {
-	Roles map[string]*roleState `json:"roles"`
-	Runs  map[string]*runState  `json:"runs"`
+	Roles    map[string]*roleState `json:"roles"`
+	Runs     map[string]*runState  `json:"runs"`
+	Messages map[string]*msgState  `json:"messages"`
+	AuditSeq int                   `json:"auditSeq"`
 }
 
 type Engine struct {
@@ -75,7 +84,11 @@ func New(root string) (*Engine, error) {
 	e := &Engine{
 		root: root,
 		cfg:  cfg,
-		st:   state{Roles: map[string]*roleState{}, Runs: map[string]*runState{}},
+		st: state{
+			Roles:    map[string]*roleState{},
+			Runs:     map[string]*runState{},
+			Messages: map[string]*msgState{},
+		},
 		logF: f,
 		log:  log.New(io.MultiWriter(os.Stdout, f), "", log.Ltime),
 	}
@@ -100,6 +113,9 @@ func (e *Engine) loadState() {
 	}
 	if e.st.Runs == nil {
 		e.st.Runs = map[string]*runState{}
+	}
+	if e.st.Messages == nil {
+		e.st.Messages = map[string]*msgState{}
 	}
 }
 
@@ -156,10 +172,121 @@ func (e *Engine) Tick() bool {
 	if _, done := e.Result(); done {
 		return true
 	}
-	e.syncRoles()
+	roles, err := space.Roles(e.root)
+	if err != nil {
+		e.log.Printf("cannot read spaces: %v", err)
+		return false
+	}
+	e.syncRoles(roles)
 	e.syncRuns()
+	e.audit(roles)
+	e.publish(roles)
 	e.saveState()
 	return false
+}
+
+// publish writes a short, current picture of the company for anyone who wants
+// it. It is deliberately a file rather than something pushed into a prompt:
+// information here is pulled, and an overview nobody asked for is just another
+// thing filling up a context window.
+func (e *Engine) publish(roles []space.Role) {
+	if e.cfg.StateFile == "" {
+		return
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Company state\n\nRewritten by the engine every %s. Read it, do not edit it.\n\n",
+		e.cfg.Tick)
+	fmt.Fprintf(&b, "%-20s %-9s %6s %6s  %s\n", "ROLE", "SESSION", "INBOX", "IDLE", "SPACE LAST CHANGED")
+	for _, r := range roles {
+		session := "stopped"
+		if tmux.Alive(r.Session(e.cfg.SessionPrefix)) {
+			session = "running"
+		}
+		idle := 0
+		if st := e.st.Roles[r.Name]; st != nil {
+			if st.Broken {
+				session = "broken"
+			}
+			idle = st.Idle
+		}
+		fmt.Fprintf(&b, "%-20s %-9s %6d %6d  %s\n",
+			r.Name, session, countDir(r.Inbox()), idle, age(newestUnder(r.Dir)))
+	}
+
+	fmt.Fprintf(&b, "\nPRODUCT  %s\n", e.productLine())
+
+	var done, waiting, gaveUp int
+	for _, run := range space.Runs(e.root) {
+		switch {
+		case run.Done():
+			done++
+		case run.GivenUp():
+			gaveUp++
+		default:
+			waiting++
+		}
+	}
+	fmt.Fprintf(&b, "PUBLIC   %d user runs: %d with impressions, %d in progress, %d abandoned\n",
+		done+waiting+gaveUp, done, waiting, gaveUp)
+
+	_ = os.WriteFile(filepath.Join(e.root, e.cfg.StateFile), []byte(b.String()), 0o644)
+}
+
+func (e *Engine) productLine() string {
+	dir := filepath.Join(e.root, space.ProductDir)
+	count, err := exec.Command("git", "-C", dir, "rev-list", "--count", "HEAD").Output()
+	if err != nil {
+		return "no commits yet"
+	}
+	last, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%h %s (%cr)").Output()
+	if err != nil {
+		return strings.TrimSpace(string(count)) + " commits"
+	}
+	n := strings.TrimSpace(string(count))
+	word := " commits"
+	if n == "1" {
+		word = " commit"
+	}
+	return n + word + ", last: " + strings.TrimSpace(string(last))
+}
+
+func countDir(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	return len(entries)
+}
+
+// newestUnder is the most recent change anywhere in a role's space, which is
+// the cheapest honest answer to "is this person doing anything".
+func newestUnder(dir string) time.Time {
+	var newest time.Time
+	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info, err := d.Info(); err == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+		return nil
+	})
+	return newest
+}
+
+func age(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	d := time.Since(t).Round(time.Minute)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%dh%02dm ago", int(d.Hours()), int(d.Minutes())%60)
+	}
 }
 
 // Result returns what the CEO wrote as the company's final answer, if it has.
@@ -176,12 +303,7 @@ func (e *Engine) Result() (string, bool) {
 	return string(b), true
 }
 
-func (e *Engine) syncRoles() {
-	roles, err := space.Roles(e.root)
-	if err != nil {
-		e.log.Printf("cannot read spaces: %v", err)
-		return
-	}
+func (e *Engine) syncRoles(roles []space.Role) {
 	present := map[string]bool{}
 	for _, r := range roles {
 		present[r.Name] = true

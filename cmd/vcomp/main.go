@@ -26,6 +26,7 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp setup    [-root DIR]            ask for settings, save only what differs
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
   vcomp roles    [-root DIR]            list the role names you can put in a roster
+  vcomp hire     NAME [-position P] [-backstory "..."] [-replace]
   vcomp status   [-root DIR]
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
   vcomp user-run [-root DIR] [-instructions FILE] [-text "..."]
@@ -57,6 +58,8 @@ func main() {
 		err = cmdRun(args)
 	case "roles":
 		err = cmdRoles(args)
+	case "hire":
+		err = cmdHire(args)
 	case "status":
 		err = cmdStatus(args)
 	case "reset":
@@ -77,6 +80,27 @@ func main() {
 		fmt.Fprintln(os.Stderr, "vcomp:", err)
 		os.Exit(1)
 	}
+}
+
+// nameAndFlags parses "cmd [flags] NAME [flags]". Go's flag package stops at
+// the first non-flag argument, and insisting that flags come first is not how
+// anyone types - least of all an agent following an example.
+func nameAndFlags(fs *flag.FlagSet, args []string) (string, error) {
+	if err := fs.Parse(args); err != nil {
+		return "", err
+	}
+	rest := fs.Args()
+	if len(rest) == 0 {
+		return "", nil
+	}
+	name := rest[0]
+	if err := fs.Parse(rest[1:]); err != nil {
+		return "", err
+	}
+	if fs.NArg() != 0 {
+		return "", fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	return name, nil
 }
 
 // company parses the shared -root flag and resolves it to an absolute path.
@@ -384,6 +408,40 @@ func cmdRoles(args []string) error {
 	return nil
 }
 
+// cmdHire composes a role from its two parts instead of having the document
+// written freehand, which is what keeps invented roles behaving like roles.
+func cmdHire(args []string) error {
+	fs := flag.NewFlagSet("hire", flag.ExitOnError)
+	dir := fs.String("root", ".", "company root directory")
+	position := fs.String("position", "", "profession from the catalogue (default: guessed from the name)")
+	backstory := fs.String("backstory", "", "this person's background (default: drawn from the pool)")
+	replace := fs.Bool("replace", false, "overwrite an existing role, ending whoever is in it")
+	name, err := nameAndFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		return fmt.Errorf(`usage: vcomp hire NAME [-position P] [-backstory "..."] [-replace]`)
+	}
+	root, err := filepath.Abs(*dir)
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	if err := bootstrap.Hire(root, cfg, name, *position, *backstory, *replace); err != nil {
+		return err
+	}
+	verb := "hired"
+	if *replace {
+		verb = "replaced"
+	}
+	fmt.Printf("%s %s; the engine will start them on its next tick\n", verb, name)
+	return nil
+}
+
 func cmdStatus(args []string) error {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	root, err := company(fs, args)
@@ -490,19 +548,24 @@ func cmdUserRun(args []string) error {
 
 func cmdAttach(args []string) error {
 	fs := flag.NewFlagSet("attach", flag.ExitOnError)
-	root, err := company(fs, args)
+	dir := fs.String("root", ".", "company root directory")
+	name, err := nameAndFlags(fs, args)
 	if err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: vcomp attach [-root DIR] ROLE")
+	if name == "" {
+		return fmt.Errorf("usage: vcomp attach ROLE [-root DIR]")
+	}
+	root, err := filepath.Abs(*dir)
+	if err != nil {
+		return err
 	}
 	e, err := engine.New(root)
 	if err != nil {
 		return err
 	}
 	defer e.Close()
-	session := e.Session(fs.Arg(0))
+	session := e.Session(name)
 	if !tmux.Exists(session) {
 		return fmt.Errorf("no session %q (try: vcomp status)", session)
 	}

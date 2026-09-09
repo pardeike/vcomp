@@ -87,6 +87,8 @@ type Config struct {
 	SessionPrefix string
 	Goal          string
 	ResultFile    string
+	StateFile     string
+	AuditFile     string
 	Harness       string
 	Harnesses     map[string]Harness
 	Prompts       map[string]string
@@ -298,6 +300,10 @@ func (c *Config) setTop(key, value string) error {
 		c.Goal = value
 	case "result_file":
 		c.ResultFile = value
+	case "state_file":
+		c.StateFile = value
+	case "audit_file":
+		c.AuditFile = value
 	case "harness":
 		c.Harness = value
 	case "roster":

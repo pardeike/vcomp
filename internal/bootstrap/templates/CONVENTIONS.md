@@ -26,6 +26,10 @@ mkdir -p ../<them>/inbox/<topic-you-choose>
 write   ../<them>/inbox/<topic-you-choose>/message.md
 ```
 
+Start `message.md` with a `From:` line naming yourself. Nothing enforces it, but
+the filesystem does not record who wrote a file, so without it nobody - not the
+recipient, not anyone reading back over what happened - can tell who asked.
+
 Add any other files you want next to `message.md`. Topic folder names should be
 short and descriptive; if you reuse an existing topic name you are appending to
 that conversation, so pick deliberately.
@@ -81,6 +85,16 @@ survive; you do not.
 So: make your value legible. Leave evidence in the product, in your commits, and
 in short answers to direct questions. Being busy is not the same as being seen
 to be useful.
+
+## The state file
+
+`{{STATE}}` in the company root is rewritten by the engine every tick: who is
+running, how deep each inbox is, how long each person has been idle, when each
+space last changed, and what has happened in the product and the public runs.
+
+Nobody is sent it. Read it when you want to know something, the same way you
+read anyone's space. It is the cheapest way to find out whether the person you
+are waiting on is buried, idle, or gone.
 
 ## The end
 

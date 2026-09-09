@@ -77,7 +77,7 @@ func TestEveryCataloguePositionRenders(t *testing.T) {
 			t.Errorf("%s: the title %q never appears in the document", p.Name, p.Title)
 		}
 		// A backstory must have been drawn from the position's sector pool.
-		if set.backstoryFrom(p.Sector, p.Name) == "" {
+		if set.flavour(p.Sector, p.Name) == "" {
 			t.Errorf("%s: no backstory pool for sector %q", p.Name, p.Sector)
 		}
 	}
@@ -273,6 +273,46 @@ func TestResetClearsWorkButKeepsSettings(t *testing.T) {
 	}
 	if !strings.Contains(string(doc), "my own standing orders") {
 		t.Error("the rebuild ignored the local template that reset kept")
+	}
+}
+
+// A role's identity is a shared profession plus a personal flavour. Two people
+// of the same type must read identically apart from the flavour, so that a
+// company's idea of what a designer does cannot drift person by person.
+func TestSameProfessionDiffersOnlyInFlavour(t *testing.T) {
+	set := Builtin()
+	a, err := set.RoleDoc("designer-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := set.RoleDoc("designer-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Fatal("two designers should not be the same person")
+	}
+	// The professional half is the document with the "You are" section removed.
+	profession := func(doc string) string {
+		return doc[strings.Index(doc, "## Your remit"):]
+	}
+	if profession(a) != profession(b) {
+		t.Error("two designers must share an identical professional description")
+	}
+	if set.flavour("universal", "designer-1") == set.flavour("universal", "designer-2") {
+		t.Error("two designers should have different flavour")
+	}
+
+	// A background handed in at hiring time replaces the pool, and nothing else.
+	custom, err := set.RoleDocAs("designer-3", "designer", "You once designed slot machines and it still bothers you.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(custom, "slot machines") {
+		t.Error("a supplied backstory should be used")
+	}
+	if profession(custom) != profession(a) {
+		t.Error("a supplied backstory must not change the professional description")
 	}
 }
 

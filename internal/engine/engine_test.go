@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -256,6 +257,66 @@ func TestConfigChangesDoNotKillLiveSessions(t *testing.T) {
 	}
 	if now := strings.Count(read(t, harnessLog), "start "); now != starts {
 		t.Fatalf("the session was restarted (%d -> %d starts) by a settings change", starts, now)
+	}
+}
+
+// The audit trail has to survive agents deleting their own messages, which is
+// the whole difficulty: the engine remembers rather than intercepts.
+func TestAuditTrailSurvivesDeletion(t *testing.T) {
+	root, _, e := company(t, "ceo, developer-1", "")
+	inbox := filepath.Join(root, "spaces", "developer-1", "inbox")
+	topic := filepath.Join(inbox, "please-fix-this")
+	if err := os.MkdirAll(topic, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "From: ceo\n\nThe lamp does not light. Please look.\n"
+	if err := os.WriteFile(filepath.Join(topic, "message.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(topic, "screenshot.png"), []byte("not really a png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tick(t, e)
+	tick(t, e) // unchanged: must not be logged twice
+
+	// The recipient deals with it and deletes the folder, as they are told to.
+	if err := os.RemoveAll(topic); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+
+	var events []map[string]any
+	raw, err := os.ReadFile(filepath.Join(root, ".vcomp", "messages.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		var ev map[string]any
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("audit line is not JSON: %v", err)
+		}
+		events = append(events, ev)
+	}
+	if len(events) != 2 {
+		t.Fatalf("want one sent and one cleared, got %d: %v", len(events), events)
+	}
+
+	sent := events[0]
+	if sent["event"] != "sent" || sent["to"] != "developer-1" || sent["from"] != "ceo" {
+		t.Errorf("wrong sent event: %v", sent)
+	}
+	if !strings.Contains(sent["text"].(string), "The lamp does not light") {
+		t.Error("the message body was not preserved")
+	}
+	if sent["files"].(float64) != 1 {
+		t.Errorf("attachments should be counted, got %v", sent["files"])
+	}
+	if events[1]["event"] != "cleared" || events[1]["topic"] != "please-fix-this" {
+		t.Errorf("wrong cleared event: %v", events[1])
+	}
+	if events[1]["lived"] == "" {
+		t.Error("a cleared message should record how long it sat there")
 	}
 }
 
