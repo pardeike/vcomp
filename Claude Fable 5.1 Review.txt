@@ -1,0 +1,43 @@
+Claude Fable 5.1 high - REVIEW
+
+The background review ran on the last commits and returned mostly session-recovery bugs. I read the whole harness myself with your focus, and the findings below are in priority order. Nothing has been changed in the working tree.
+
+## Agents that exhaust their budget and return nothing
+
+This is where the harness loses the most. Its "sub-agents" are tmux sessions, and their budget is context plus time. Four paths end with an agent that produced nothing and no way out.
+
+- **A context-exhausted agent is nudged forever and revived into the same dead conversation.** The only liveness signal is a byte-identical pane at `internal/engine/roles.go:129`. When claude or codex sits on "prompt is too long" or a failed compaction, the pane never changes, the nudge is typed, the counter resets, and every revive uses `--continue` at `internal/engine/roles.go:146`, reloading the exhausted history. There is no path to a fresh conversation except a role.md change. Fix: count nudges since the space or product last changed, and after a configurable count clear Started so the next hire is fresh. Add a per-harness `exhausted` pattern setting grepped from the captured pane, so a known overflow message triggers the fresh restart on the same tick.
+
+- **A fresh start throws away notes.md.** The `fresh` prompt at `internal/config/default.conf:156` never mentions notes. The standing rules make notes.md the handover document, but a replacement or a fresh restart is told only to read role.md and conventions. One line fixes it: "If ./notes.md exists, read it; it is what your predecessor knew."
+
+- **Steering kills the whole conversation with no handover.** Every steer call rerenders role.md and the hash change at `internal/engine/roles.go:63` kills the session immediately. The CEO's main tool therefore costs the employee's entire memory, and the agent gets no chance to flush its state to notes.md. Two options. Send a configurable `handover` prompt and wait one or two ticks before killing. Or treat a steering-only change as a re-prompt with the `back` text, keeping the session, and reserve replacement for backstory or position changes. The second matches your own wording that steering "narrows the work within the profession".
+
+- **User runs are killed at the timeout with nothing harvested.** At `internal/engine/runs.go:129` the session dies at 25 minutes, and the second attempt starts blind from scratch. A `user_wrapup` prompt sent at a configurable fraction of the timeout, asking for impressions.md with whatever the user has now, turns most timeouts into a result.
+
+- **Legacy agents lose their context on upgrade.** The background review confirmed that adopted untagged sessions are seeded with the old role.md hash, so the first tick's conversion changes the hash and replaces every recovered agent without resume. Details are in its report at `internal/engine/lock.go:149`.
+
+Codex resume needs verification. The resume command at `internal/config/default.conf:141` uses `resume --last`. If codex picks the newest session across all directories rather than the newest in the working directory, reviving a codex company gives every role the same conversation. I could not verify the codex behaviour offline.
+
+## Prompts and effectiveness
+
+- **The standing rules and the pacing settings pull in opposite directions.** The empty-inbox section at `internal/bootstrap/templates/standing.md:36` tells agents they can be "replaced without cost" and to "never sit and wait", while the default config keeps idle roles quiet on purpose. The prompt wins: agents manufacture work, burn context, and churn the product, and the engine then throttles them. Agents that loop looking for something to do are also the ones that exhaust context first. Allow an explicit stop: "If none of these is worth doing, write why in notes.md and stop; you will be called back." The nudge loop makes stopping free.
+
+- **The nudge has no escalation and no information.** The same "Continue." at `internal/config/default.conf:158` goes to a healthy agent between turns and to one that has done nothing for an hour. Make the nudge count the signal: first nudge is plain, later nudges say how many ticks without change and ask for the blocker in notes.md or the CEO's inbox, and the last one is the fresh restart above. The same counter belongs in STATE.md, because the IDLE column there resets on every nudge and can never exceed nine, so it tells the CEO nothing about who is actually stuck.
+
+- **Your global CLAUDE.md is inherited by every agent.** Your own instructions tell an agent to stop and offer context choices when a prompt is underspecified, and to poll usage every five minutes. Inside vcomp there is no human to answer, so a role that follows the first rule idles and gets nudged, and the second rule spends tokens on nothing. A company-root CLAUDE.md and AGENTS.md rendered from a template, saying there is no human and questions go to inboxes, overrides this cheaply and stays within your "no prose in Go" rule.
+
+- **Startup costs one round trip per role to learn the goal.** Every non-CEO role is told nobody has given it the goal, so the first hour is five inbox requests to the CEO and five answers. Keeping the goal private is the design, but the CEO template could require a public `brief.md` in its own space as its first act, so people pull direction instead of asking.
+
+- **Conventions carry CEO-only material into every context.** The section at `internal/bootstrap/templates/CONVENTIONS.md:75` repeats hire and steer command syntax that already lives in the CEO and HR templates. A developer reads it on every fresh start and every re-read. Cut it to one sentence and keep the syntax in the two templates that use it.
+
+- **Steering and backstory have no size cap.** A `-file` steer of tens of kilobytes lands in role.md verbatim and reopens on every fresh start. A few kilobytes cap with a clear error keeps role.md a document, not a dump.
+
+## Performance
+
+None of this affects output quality yet, so it ranks last.
+
+- **Space age walks the whole space every tick.** `internal/engine/report.go:95` stats every file under each space. A tester who clones a repo or builds into its space turns that into tens of thousands of stats every 20 seconds. Skip `.git` and `node_modules`, or cap depth.
+
+- **About sixteen tmux spawns per role per tick.** Inspect is called several times per role, and `remember` at `internal/engine/lock.go:186` rewrites the state option even when unchanged. Cache the pane inspection per tick and skip the write when the JSON is identical. The background review found the legacy-session path costs another six spawns plus a config parse per untagged session.
+
+The background review also reported five correctness findings outside your focus: the legacy PID refusal prevents stop from working on an old engine, `pane_start_path` is empty on tmux 2.0 to 3.2a, hand-opened tmux sessions can be adopted and typed into, sessions become unkillable when config or role.md is missing, and reset writes the goal file before confirmation. They are in its output file if you want them.
