@@ -34,6 +34,9 @@ idle_ticks_empty = 20
 nudge = Stop writing plans. Go ask someone a hard question and demand evidence.
 ```
 
+For the shipped CLI presets and local endpoint examples, see
+[CLI harnesses and local models](harnesses.md).
+
 ## Templates
 
 Every document an agent reads is rendered from a template, resolved the same

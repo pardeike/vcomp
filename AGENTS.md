@@ -36,6 +36,8 @@ Read the relevant guide before changing that part of the project:
   placeholders, professions, backstories, and generated role documents.
 - [Engine and design decisions](docs/engine.md): session lifecycle, pacing,
   state, audit trail, logging, and tmux constraints.
+- [CLI harnesses and local models](docs/harnesses.md): pi, Oh My Pi, OpenCode,
+  provider setup, and session behavior.
 - [Running a company](docs/usage.md): commands, setup, reset, installation,
   session ownership, and operating notes.
 

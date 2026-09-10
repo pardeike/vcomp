@@ -93,8 +93,8 @@ Things that look arbitrary and are not, so nobody "fixes" them back:
 - **The user role's blindness is instruction, not enforcement.** Everything is
   world-readable by design; a user agent that goes looking for the company can
   find it. The snapshot in `public/run-*/product/` exists so it has no reason to.
-- **Both harnesses ask "do you trust this folder?" the first time they run in a
-  directory**, with "yes" preselected. Typing a prompt into that dialog answers
+- **Some harnesses ask "do you trust this folder?" on first use**, with "yes"
+  preselected in the original Codex setup. Typing a prompt into that dialog answers
   it wrongly and quits the agent, which used to produce an endless hire-and-die
   loop that built nothing. That is what `handshake = Enter` is for. It is a
   per-harness setting rather than engine code because the next harness will ask

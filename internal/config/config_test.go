@@ -78,6 +78,41 @@ func TestShippedHarnessesExpandCleanly(t *testing.T) {
 	}
 }
 
+// Local-model presets must keep unattended/resume flags while dropping optional
+// model controls. A role's provider/model selector must reach either command.
+func TestLocalModelHarnessCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name, fresh, resumed, controls string
+	}{
+		{"pi", "pi", "pi --continue", " --model local/my-model --thinking low"},
+		{"omp", "env OMP_SKIP_SETUP=1 omp --auto-approve", "env OMP_SKIP_SETUP=1 omp --continue --auto-approve", " --model local/my-model --thinking low"},
+		{"opencode", "opencode --auto", "opencode --continue --auto", " --model local/my-model"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Default()
+			c.Harness = tc.name
+			for _, configured := range []bool{false, true} {
+				if configured {
+					c.Roles["developer"] = Role{Model: "local/my-model", Effort: "low"}
+				}
+				for _, resume := range []bool{false, true} {
+					want := tc.fresh
+					if resume {
+						want = tc.resumed
+					}
+					if configured {
+						want += tc.controls
+					}
+					got, err := c.CommandFor("developer", resume)
+					if err != nil || strings.Join(got, " ") != want {
+						t.Fatalf("configured=%v resume=%v: got %v, %v; want %q", configured, resume, got, err, want)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestRoleOverridesHarnessModelAndPrompt(t *testing.T) {
 	c, err := Parse(`harness = a
 [harness a]
