@@ -57,10 +57,12 @@ type msgState struct {
 }
 
 type state struct {
-	Roles    map[string]*roleState `json:"roles"`
-	Runs     map[string]*runState  `json:"runs"`
-	Messages map[string]*msgState  `json:"messages"`
-	AuditSeq int                   `json:"auditSeq"`
+	ObservedAt   time.Time                  `json:"observedAt,omitempty"`
+	Observations map[string]RoleObservation `json:"observations,omitempty"`
+	Roles        map[string]*roleState      `json:"roles"`
+	Runs         map[string]*runState       `json:"runs"`
+	Messages     map[string]*msgState       `json:"messages"`
+	AuditSeq     int                        `json:"auditSeq"`
 }
 
 type Engine struct {
@@ -161,6 +163,11 @@ func (e *Engine) loadState() {
 }
 
 func (e *Engine) saveState() {
+	e.st.ObservedAt = time.Now()
+	e.st.Observations = map[string]RoleObservation{}
+	for name, s := range e.st.Roles {
+		e.st.Observations[name] = RoleObservation{Idle: s.Idle, Broken: s.Broken, Error: s.LastErr}
+	}
 	if b, err := json.MarshalIndent(e.st, "", "  "); err == nil {
 		if err := space.WriteFile(e.statePath(), b, 0o644); err != nil {
 			e.log.Printf("cannot save state: %v", err)

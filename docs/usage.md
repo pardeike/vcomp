@@ -2,6 +2,23 @@
 
 [Project guide](../AGENTS.md)
 
+## Interactive use
+
+Bare `vcomp` opens the terminal interface. `vcomp run` and `vcomp start` start
+supervision with the dashboard; `status`, `setup`, and `roles` open their related
+screens. Unfilled `hire`, `steer`, `user-run`, `stop`, and `reset` commands open
+forms or confirmations. Fully specified mutation commands execute immediately.
+
+Use `--plain` for the original command-line behavior. Redirected input or output
+also keeps the CLI. For example, `vcomp run -root DIR --plain` runs the foreground
+supervisor and writes its log to standard output. `vcomp tui -root DIR` opens a
+view without starting supervision.
+
+See [the terminal interface guide](tui.md) for keys, screen behavior, and exit
+semantics. Closing a view of another engine leaves it running. Leaving a run
+started by this TUI stops its supervisor and keeps the agents in tmux; the
+confirmation explains this. Use Stop to end both supervision and agent sessions.
+
 ## Operating notes
 
 - Harnesses run with approvals bypassed (`claude --dangerously-skip-permissions`
@@ -34,8 +51,9 @@
 ## Commands
 
 ```
-vcomp                                   set this directory up if needed, then run it
-vcomp start    [-root DIR]              the same thing, named
+vcomp                                   open the terminal interface
+vcomp tui      [-root DIR]              view a company without starting its engine
+vcomp start    [-root DIR]              start supervision with a dashboard
 vcomp install  [-force]                 write the defaults to ~/.vcomp/
 vcomp setup    [-root DIR]              ask for settings, save only what differs
 vcomp run      [-root DIR] [-goal "…"]  keep the company alive (foreground)
@@ -55,10 +73,10 @@ The whole thing is meant to start like this:
 mkdir /tmp/vgame && cd /tmp/vgame && vcomp
 ```
 
-Bare `vcomp` works on the current directory: if it is not a company yet it runs
-the setup questions, and then it starts the engine. Leaving a new company without a goal
-aborts and writes nothing at all, so running `vcomp` in the wrong
-directory by accident costs you one keystroke.
+Bare `vcomp` works on the current directory. If it is not a company yet, the
+TUI opens the setup form. Ctrl-S validates and saves; Escape cancels without
+writing anything. After setup, press s to start supervision. `vcomp start --plain`
+retains the original setup questions followed by the foreground engine.
 
 `vcomp reset` is the difference between starting over and starting from
 nothing: it deletes everything the company produced - the spaces, the artifact,

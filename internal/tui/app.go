@@ -1,0 +1,427 @@
+package tui
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"vcomp/internal/bootstrap"
+	"vcomp/internal/config"
+	"vcomp/internal/engine"
+	"vcomp/internal/space"
+)
+
+type Options struct {
+	Screen                       int
+	Start                        bool
+	Goal, GoalFile, Action, Name string
+}
+type refreshResult struct {
+	Root string
+	Data data
+}
+
+type result struct {
+	Text string
+	Err  error
+	Kind string
+}
+type app struct {
+	m         model
+	t         *terminal
+	child     *exec.Cmd
+	childDone chan result
+	jobs      chan result
+	refresh   chan refreshResult
+	reading   bool
+}
+
+func Run(root string, opt Options) error {
+	if !Interactive() {
+		return fmt.Errorf("the TUI requires an interactive terminal; use --plain for command-line output")
+	}
+	t, err := openTerminal()
+	if err != nil {
+		return err
+	}
+	a := &app{m: model{Root: root, Screen: opt.Screen, Follow: opt.Screen == 5, Message: "Loading company..."}, t: t, jobs: make(chan result, 1), refresh: make(chan refreshResult, 1)}
+	defer func() {
+		a.closeChild()
+		if a.t != nil {
+			a.t.Close()
+		}
+	}()
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGWINCH)
+	defer signal.Stop(signals)
+	tick := time.NewTicker(config.Default().TUIRefresh)
+	defer tick.Stop()
+	a.reload()
+	initial := true
+	for {
+		w, h := a.t.Size()
+		fmt.Fprint(os.Stdout, draw(a.m.render(w, h), os.Getenv("NO_COLOR") == ""))
+		select {
+		case sig := <-signals:
+			if sig != syscall.SIGWINCH {
+				return nil
+			}
+		case k := <-a.t.keys:
+			act := a.m.key(k)
+			if act != nil {
+				quit, err := a.dispatch(*act)
+				if err != nil {
+					if a.t == nil {
+						return err
+					}
+					a.m.Message = err.Error()
+				}
+				if quit {
+					return nil
+				}
+			}
+		case refreshed := <-a.refresh:
+			a.reading = false
+			if refreshed.Root != a.m.Root {
+				a.reload()
+				continue
+			}
+			d := refreshed.Data
+			a.m.update(d)
+			if d.View.Supervised && a.m.Message == "Starting supervision..." {
+				a.m.Message = ""
+			}
+			if d.View.Config.TUIRefresh > 0 {
+				tick.Reset(d.View.Config.TUIRefresh)
+			}
+			if initial {
+				initial = false
+				a.m.Message = ""
+				switch {
+				case opt.Goal != "" || opt.GoalFile != "":
+					if !d.View.Exists {
+						a.m.Busy = true
+						go func() { // Create through the same bootstrap path; start supervision afterwards.
+							cfg, err := config.Load(root)
+							if err == nil && opt.GoalFile != "" {
+								var b []byte
+								b, err = os.ReadFile(opt.GoalFile)
+								cfg.Goal = string(b)
+							}
+							if opt.Goal != "" {
+								cfg.Goal = opt.Goal
+							}
+							if err == nil {
+								err = bootstrap.Init(root, cfg)
+							}
+							a.jobs <- result{Kind: "created-start", Err: err}
+						}()
+					} else if opt.Start {
+						_, err = a.dispatch(action{Kind: "start"})
+					}
+				case opt.Action != "":
+					_, err = a.dispatch(action{Kind: opt.Action, Values: []string{opt.Name}})
+				case opt.Screen == 3 || !d.View.Exists:
+					_, err = a.dispatch(action{Kind: "settings-form"})
+				case opt.Start:
+					_, err = a.dispatch(action{Kind: "start"})
+				}
+				if err != nil {
+					a.m.Message = err.Error()
+				}
+			}
+		case r := <-a.jobs:
+			a.m.Busy = false
+			if r.Err != nil {
+				a.m.Message = r.Err.Error()
+			} else {
+				a.m.Form = nil
+				a.m.Message = r.Text
+				switch r.Kind {
+				case "save-settings", "hire", "replace", "steer":
+					a.m.switchScreen(0)
+					a.m.Message = r.Text
+				case "test":
+					a.m.switchScreen(1)
+					a.m.Message = r.Text
+				case "created-start":
+					_, err = a.dispatch(action{Kind: "start"})
+					if err != nil {
+						a.m.Message = err.Error()
+					}
+				}
+			}
+			a.reload()
+		case r := <-a.childDone:
+			a.child = nil
+			a.childDone = nil
+			a.m.OwnEngine = false
+			if r.Err != nil {
+				a.m.Message = "Engine ended: " + r.Err.Error() + " " + r.Text
+			} else {
+				a.m.Message = "Supervisor ended. See Goal / result or Activity for details."
+			}
+			a.reload()
+		case <-tick.C:
+			a.reload()
+		}
+	}
+}
+func (a *app) reload() {
+	if a.reading {
+		return
+	}
+	a.reading = true
+	root := a.m.Root
+	go func() { a.refresh <- refreshResult{Root: root, Data: loadData(root)} }()
+}
+func (a *app) closeChild() {
+	if a.child == nil {
+		return
+	}
+	_ = a.child.Process.Signal(os.Interrupt)
+	timeout := a.m.Data.View.Config.StopTimeout
+	if timeout <= 0 {
+		timeout = config.Default().StopTimeout
+	}
+	select {
+	case <-a.childDone:
+	case <-time.After(timeout):
+		_ = a.child.Process.Kill()
+		<-a.childDone
+	}
+	a.child = nil
+	a.childDone = nil
+	a.m.OwnEngine = false
+}
+func (a *app) work(kind string, fn func() (string, error)) {
+	a.m.Busy = true
+	go func() { s, err := fn(); a.jobs <- result{Kind: kind, Text: s, Err: err} }()
+}
+func (a *app) dispatch(act action) (bool, error) {
+	root := a.m.Root
+	switch act.Kind {
+	case "quit":
+		return true, nil
+	case "start":
+		if !bootstrap.Exists(root) {
+			return a.dispatch(action{Kind: "settings-form"})
+		}
+		if a.child != nil || engine.Supervising(root) {
+			a.m.switchScreen(0)
+			a.m.Message = "Showing the existing engine."
+			return false, nil
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return false, err
+		}
+		c := exec.Command(exe, "run", "-root", root, "--plain")
+		var stderr bytes.Buffer
+		c.Stdout = io.Discard
+		c.Stderr = &stderr
+		if err = c.Start(); err != nil {
+			return false, err
+		}
+		a.child = c
+		a.childDone = make(chan result, 1)
+		done := a.childDone
+		go func() { err := c.Wait(); done <- result{Err: err, Text: stderr.String()} }()
+		a.m.OwnEngine = true
+		a.m.switchScreen(0)
+		a.m.Message = "Starting supervision..."
+		a.reload()
+	case "settings-form":
+		f, err := settingsForm(root)
+		if err != nil {
+			return false, fmt.Errorf("%v; press e on Settings to repair the file", err)
+		}
+		a.m.Form = f
+	case "save-settings":
+		a.work(act.Kind, func() (string, error) {
+			err := saveSettings(root, act.Values)
+			return "Company settings saved. Press s to start supervision.", err
+		})
+	case "role-settings-form":
+		f, err := roleSettingsForm(root, act.Values[0])
+		if err != nil {
+			return false, err
+		}
+		a.m.Form = f
+	case "role-settings":
+		a.work(act.Kind, func() (string, error) {
+			return "Employee settings saved; running conversations continue until their next restart.", saveRoleSettings(root, act.Values)
+		})
+	case "hire-form":
+		names := []string{}
+		for _, p := range a.m.Data.Positions {
+			if p.Name != "ceo" {
+				names = append(names, p.Name)
+			}
+		}
+		position := "developer"
+		if a.m.Screen == 6 && a.m.Selected < len(a.m.Data.Positions) {
+			position = a.m.Data.Positions[a.m.Selected].Name
+		}
+		name := ""
+		if len(act.Values) > 0 {
+			name = act.Values[0]
+		}
+		a.m.Form = &form{Kind: "hire", Title: "Hire an employee", Fields: []field{{Label: "Name", Value: name}, {Label: "Profession", Value: position, Choices: names}, {Label: "Backstory (optional)"}}}
+	case "replace-form":
+		name := act.Values[0]
+		if name == "ceo" {
+			return false, fmt.Errorf("the CEO's identity is user-owned; edit its template or instructions in Settings")
+		}
+		a.m.Form = &form{Kind: "replace", Title: "Replace " + name + " (fresh conversation)", Fields: []field{{Label: "Employee", Value: name}, {Label: "New backstory"}}}
+	case "steer-form":
+		name := act.Values[0]
+		if name == "ceo" {
+			return false, fmt.Errorf("use CEO instructions file in Settings for the CEO")
+		}
+		a.m.Form = &form{Kind: "steer", Title: "Steer an employee", Fields: []field{{Label: "Employee", Value: name}, {Label: "Steering text (empty clears it)"}, {Label: "Or read from file"}}}
+	case "hire":
+		a.work(act.Kind, func() (string, error) {
+			return command(root, "hire", act.Values[0], "-position", act.Values[1], "-backstory", act.Values[2])
+		})
+	case "replace":
+		if len(act.Values) < 2 {
+			return false, fmt.Errorf("incomplete replacement")
+		}
+		a.m.Confirm = &action{Kind: "replace-confirmed", Values: act.Values}
+		a.m.Confirmation = "Replace " + act.Values[0] + "? Their profession, steering, notes, and files survive; their conversation starts fresh."
+	case "replace-confirmed":
+		a.work("replace", func() (string, error) {
+			return command(root, "hire", act.Values[0], "-backstory", act.Values[1], "-replace")
+		})
+	case "steer":
+		a.work(act.Kind, func() (string, error) {
+			args := []string{"steer", act.Values[0], "-text", act.Values[1]}
+			if act.Values[2] != "" {
+				args = append(args, "-file", act.Values[2])
+			}
+			return command(root, args...)
+		})
+	case "test-form":
+		a.m.Form = &form{Kind: "test", Title: "Create a public user test", Fields: []field{{Label: "Instructions (optional)"}, {Label: "Or instructions file"}}}
+	case "test":
+		a.work(act.Kind, func() (string, error) {
+			if !bootstrap.Exists(root) {
+				return "", fmt.Errorf("set up the company first")
+			}
+			args := []string{"user-run", "-text", act.Values[0]}
+			if act.Values[1] != "" {
+				args = append(args, "-instructions", act.Values[1])
+			}
+			return command(root, args...)
+		})
+	case "stop-confirm":
+		a.m.Confirm = &action{Kind: "stop"}
+		a.m.Confirmation = "Stop this company's engine and agent sessions? Files and history are kept."
+	case "stop":
+		a.work(act.Kind, func() (string, error) { return command(root, "stop") })
+	case "reset-confirm":
+		if !bootstrap.Exists(root) {
+			return false, fmt.Errorf("no company here to reset")
+		}
+		cfg, err := config.Load(root)
+		if err != nil {
+			return false, err
+		}
+		paths := bootstrap.Produced(root, cfg)
+		for i, p := range paths {
+			paths[i] = strings.TrimPrefix(p, root+string(filepath.Separator))
+		}
+		a.m.Confirm = &action{Kind: "reset"}
+		a.m.Confirmation = "Reset " + root + "?\nDeletes: " + strings.Join(paths, ", ") + "\nKeeps company settings and template overrides. Stops its engine and agents."
+	case "reset":
+		a.work(act.Kind, func() (string, error) { return command(root, "reset", "-y") })
+	case "open":
+		if a.child != nil {
+			return false, fmt.Errorf("stop this run with x before opening another company")
+		}
+		path, err := filepath.Abs(act.Values[0])
+		if err != nil {
+			return false, err
+		}
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			return false, fmt.Errorf("choose an existing directory")
+		}
+		a.m.Root = path
+		a.m.Form = nil
+		a.m.Data = data{}
+		a.m.switchScreen(0)
+		a.reload()
+	case "editor":
+		return false, a.edit()
+	case "attach":
+		if len(act.Values) == 0 || act.Values[0] == "" {
+			return false, fmt.Errorf("this employee has no session")
+		}
+		if os.Getenv("TMUX") != "" {
+			c := exec.Command("tmux", "switch-client", "-t", act.Values[0])
+			b, err := c.CombinedOutput()
+			if err != nil {
+				return false, fmt.Errorf("cannot switch tmux client: %s", strings.TrimSpace(string(b)))
+			}
+			a.m.Message = "Watching agent. Ctrl-B then L returns to the dashboard."
+			return false, nil
+		}
+		return false, a.external(exec.Command("tmux", "attach-session", "-t", act.Values[0]))
+	}
+	return false, nil
+}
+func (a *app) external(c *exec.Cmd) error {
+	a.t.Close()
+	a.t = nil
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err := c.Run()
+	t, termErr := openTerminal()
+	if termErr != nil {
+		return fmt.Errorf("cannot restore TUI: %w", termErr)
+	}
+	a.t = t
+	a.reload()
+	return err
+}
+func (a *app) edit() error {
+	root := a.m.Root
+	path := filepath.Join(config.LocalDir(root), config.FileName)
+	if a.m.Detail == "agent" {
+		files := []string{"", "", "notes.md", "goals.md", ""}
+		name := files[a.m.Sub]
+		if name == "" {
+			return fmt.Errorf("this view is read-only; use steering to change role instructions")
+		}
+		path = filepath.Join(root, space.SpacesDir, a.m.agent(), name)
+	} else if a.m.Screen == 4 {
+		path = filepath.Join(root, space.SpacesDir, "ceo", "goal.md")
+		if a.m.Data.View.Config.GoalFile != "" {
+			path = a.m.Data.View.Config.GoalFile
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(root, path)
+			}
+		} else {
+			return fmt.Errorf("set a Goal file in Settings, then edit it here; generated goal.md is replaced by the engine")
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+	args := strings.Fields(editor)
+	if len(args) == 0 {
+		return fmt.Errorf("EDITOR is empty")
+	}
+	return a.external(exec.Command(args[0], append(args[1:], path)...))
+}

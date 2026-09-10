@@ -30,6 +30,8 @@ prompt, and document is a setting or a template.
 
 Read the relevant guide before changing that part of the project:
 
+- [Terminal interface](docs/tui.md): primary user workflows, responsive screens,
+  keyboard navigation, and the boundary between the view and supervision.
 - [Company layout and protocol](docs/company.md): spaces, inboxes, public runs,
   CEO authority, replacement, steering, and completion.
 - [Settings and templates](docs/configuration.md): configuration layers, command

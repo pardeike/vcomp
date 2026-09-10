@@ -80,6 +80,7 @@ type Role struct {
 
 type Config struct {
 	Tick            time.Duration
+	TUIRefresh      time.Duration
 	IdleTicks       int
 	IdleTicksEmpty  int
 	UserTimeout     time.Duration
@@ -298,6 +299,8 @@ func (c *Config) setTop(key, value string) error {
 		return nil
 	}
 	switch key {
+	case "tui_refresh":
+		return dur(&c.TUIRefresh)
 	case "tick":
 		return dur(&c.Tick)
 	case "stop_timeout":

@@ -17,12 +17,14 @@ import (
 	"vcomp/internal/engine"
 	"vcomp/internal/space"
 	"vcomp/internal/tmux"
+	"vcomp/internal/tui"
 )
 
 const usage = `vcomp - a virtual company of AI agents
 
-  vcomp                                 set this directory up if needed, then run it
-  vcomp start    [-root DIR]            the same thing, named
+  vcomp                                 open the interactive dashboard
+  vcomp tui      [-root DIR]            open the terminal interface
+  vcomp start    [-root DIR]            start supervision with the dashboard
   vcomp install  [-force]               write the defaults to ~/.vcomp/
   vcomp setup    [-root DIR]            ask for settings, save only what differs
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
@@ -39,7 +41,9 @@ Any empty directory is a company waiting to happen:
 
   mkdir /tmp/vgame && cd /tmp/vgame && vcomp
 
-Settings resolve built-in defaults, then ~/.vcomp/, then DIR/.vcomp/.
+Interactive commands open the relevant TUI screen. --plain keeps the CLI.
+Redirected input/output also uses the CLI. Fully specified mutation commands
+execute directly. Settings resolve built-in defaults, ~/.vcomp/, then DIR/.vcomp/.
 `
 
 func main() {
@@ -48,37 +52,49 @@ func main() {
 	if len(os.Args) > 1 {
 		cmd, args = os.Args[1], os.Args[2:]
 	}
+	if strings.HasPrefix(cmd, "-") && cmd != "-h" && cmd != "--help" {
+		cmd, args = "start", os.Args[1:]
+	}
 	var err error
-	switch cmd {
-	case "start":
-		err = cmdStart(args)
-	case "install":
-		err = cmdInstall(args)
-	case "setup":
-		err = cmdSetup(args)
-	case "run":
-		err = cmdRun(args)
-	case "roles":
-		err = cmdRoles(args)
-	case "hire":
-		err = cmdHire(args)
-	case "steer":
-		err = cmdSteer(args)
-	case "status":
-		err = cmdStatus(args)
-	case "reset":
-		err = cmdReset(args)
-	case "stop":
-		err = cmdStop(args)
-	case "user-run":
-		err = cmdUserRun(args)
-	case "attach":
-		err = cmdAttach(args)
-	case "-h", "--help", "help":
-		fmt.Print(usage)
-		return
-	default:
-		err = fmt.Errorf("unknown command %q", cmd)
+	args, plain := plainArgs(args)
+	if !plain && (cmd == "tui" || tui.Interactive() && wantsTUI(cmd, args)) {
+		uiCommand := cmd
+		if len(os.Args) == 1 {
+			uiCommand = "tui"
+		}
+		err = cmdTUI(uiCommand, args)
+	} else {
+		switch cmd {
+		case "start":
+			err = cmdStart(args)
+		case "install":
+			err = cmdInstall(args)
+		case "setup":
+			err = cmdSetup(args)
+		case "run":
+			err = cmdRun(args)
+		case "roles":
+			err = cmdRoles(args)
+		case "hire":
+			err = cmdHire(args)
+		case "steer":
+			err = cmdSteer(args)
+		case "status":
+			err = cmdStatus(args)
+		case "reset":
+			err = cmdReset(args)
+		case "stop":
+			err = cmdStop(args)
+		case "user-run":
+			err = cmdUserRun(args)
+		case "attach":
+			err = cmdAttach(args)
+		case "-h", "--help", "help":
+			fmt.Print(usage)
+			return
+		default:
+			err = fmt.Errorf("unknown command %q", cmd)
+		}
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "vcomp:", err)
