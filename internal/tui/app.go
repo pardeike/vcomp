@@ -425,6 +425,8 @@ func (a *app) dispatch(act action) (bool, error) {
 			return false, err
 		}
 		a.m.Data.View.Config.TerminalView = mode
+		a.m.TerminalSnapshot = ""
+		a.m.Follow = true
 		a.m.Scroll = 0
 		a.reload()
 	case "intervene-confirm":

@@ -34,6 +34,7 @@ type professionDraft struct {
 }
 
 type model struct {
+	TerminalSnapshot              string
 	Draft                         *professionDraft
 	ShowDeleted                   bool
 	Root                          string
@@ -134,6 +135,7 @@ func (m *model) switchScreen(n int) {
 	m.Selected = 0
 	m.Scroll = 0
 	m.Sub = 0
+	m.TerminalSnapshot = ""
 	m.InboxTopic = ""
 	m.Detail = ""
 	m.Message = ""
@@ -227,6 +229,8 @@ func (m *model) key(k key) *action {
 				step = -1
 			}
 			m.Sub = (m.Sub + step + 5) % 5
+			m.Follow = m.Sub == 2
+			m.TerminalSnapshot = ""
 			m.Scroll = 0
 			return nil
 		}
@@ -267,6 +271,7 @@ func (m *model) key(k key) *action {
 		delta = max(1, m.H-10)
 	}
 	if delta != 0 {
+		m.pauseTerminal()
 		m.Follow = false
 		if m.Detail != "" || m.count() == 0 {
 			m.Scroll = max(0, m.Scroll+delta)
@@ -276,6 +281,7 @@ func (m *model) key(k key) *action {
 		return nil
 	}
 	if k.Name == "home" {
+		m.pauseTerminal()
 		m.Follow = false
 		m.Scroll = 0
 		if m.Detail == "" {
@@ -284,6 +290,7 @@ func (m *model) key(k key) *action {
 		return nil
 	}
 	if k.Name == "end" {
+		m.pauseTerminal()
 		m.Follow = false
 		if m.count() > 0 && m.Detail == "" {
 			m.Selected = m.count() - 1
@@ -293,6 +300,7 @@ func (m *model) key(k key) *action {
 		return nil
 	}
 	if k.Text == "f" {
+		m.TerminalSnapshot = ""
 		m.Follow = true
 		m.Scroll = 0
 		return nil
@@ -402,6 +410,9 @@ func (m *model) document() string {
 			return m.Data.Inboxes[a][m.inboxIndex()].Content
 		}
 		if m.Sub == 2 && m.Selected < len(m.Data.View.Agents) {
+			if m.TerminalSnapshot != "" {
+				return m.TerminalSnapshot
+			}
 			return terminalActivity(m.Data.View.Agents[m.Selected], m.Data.View.Config.TerminalView)
 		}
 		if docs := m.Data.AgentDocs[a]; len(docs) > m.Sub {
@@ -412,7 +423,7 @@ func (m *model) document() string {
 		return m.Data.PositionDocs[m.profession().Name]
 	case "profession-draft":
 		if m.Draft != nil {
-			return "Scope: " + m.Draft.Scope + "\nDraft only. Edit with e; save with s.\nSaving a changed definition replaces affected running employees on their next engine tick.\n\n" + m.Draft.Text
+			return "Scope: " + m.Draft.Scope + "\nDraft only. Edit with e; save with s.\nSaving a changed definition replaces affected running employees on their next engine tick.\n" + documentSection("DRAFT DEFINITION", m.Draft.Text)
 		}
 		return "No draft."
 	case "run":
@@ -426,7 +437,7 @@ func (m *model) document() string {
 	case 3:
 		return m.Data.Settings
 	case 4:
-		return "GOAL\n\n" + m.Data.Goal + "\n\nRESULT\n\n" + m.Data.Result
+		return documentSection("GOAL", m.Data.Goal) + documentSection("RESULT", m.Data.Result)
 	case 5:
 		return m.Data.Log
 	}

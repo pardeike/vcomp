@@ -126,8 +126,8 @@ func parseTurnStats(input io.Reader, cwd string) TurnStats {
 		brief, detail := activityText(entry.Message.Role, entry.Message.ToolName, entry.Message.StopReason, entry.Message.Content)
 		if brief != "" {
 			stamp := entry.Timestamp.Local().Format("15:04:05")
-			stats.Activity = keepRecent(stamp + "  " + brief + "\n\n" + stats.Activity)
-			stats.Detail = keepRecent(stamp + "  " + detail + "\n\n" + stats.Detail)
+			stats.Activity = keepRecent(stats.Activity + stamp + "  " + brief + "\n\n")
+			stats.Detail = keepRecent(stats.Detail + stamp + "  " + detail + "\n\n")
 			stats.Latest = entry.Timestamp
 		}
 		switch entry.Message.Role {

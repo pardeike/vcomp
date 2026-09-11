@@ -70,7 +70,7 @@ func loadData(root string) data {
 		if p.Deleted {
 			status = "Deleted from catalogue; retained for existing employees"
 		}
-		d.PositionDocs[p.Name] = "Source: " + p.Source + "\n" + status + "\n\nShared profession definition. Backstories belong to individual hires.\n\n" + text
+		d.PositionDocs[p.Name] = "Source: " + p.Source + "\n" + status + "\nShared profession definition. Backstories belong to individual hires.\n" + documentSection("PROFESSION DEFINITION", text)
 	}
 	d.Goal = readDocument(filepath.Join(root, space.SpacesDir, "ceo", "goal.md"), false)
 	if d.View.Config.ResultFile != "" {
@@ -79,7 +79,7 @@ func loadData(root string) data {
 		d.Result = "No result file configured."
 	}
 	d.Log = readDocument(filepath.Join(config.LocalDir(root), "engine.log"), true)
-	d.Settings = "COMPANY OVERRIDES\n" + filepath.Join(config.LocalDir(root), config.FileName) + "\n\n" + readDocument(filepath.Join(config.LocalDir(root), config.FileName), false) + "\n\nEnter / c: change common settings\ne: edit the full file\n\nResolution: built-in defaults, then ~/.vcomp, then this company.\nChanges are loaded at engine ticks. Model/harness changes apply on restart.\n\ng: Role generation settings (independent model and CLI)."
+	d.Settings = filepath.Join(config.LocalDir(root), config.FileName) + "\n" + documentSection("FILE · company overrides", nonemptyLines(readDocument(filepath.Join(config.LocalDir(root), config.FileName), false))) + documentSection("VCOMP · controls", "Enter / c: change common settings\ne: edit the full file\ng: role generation settings (independent model and CLI)\n\nResolution: built-in defaults, then ~/.vcomp, then this company.\nChanges are loaded at engine ticks. Model/harness changes apply on restart.")
 	if d.View.Exists {
 		status := gitText(root, "status", "--short", "--branch")
 		commits := gitText(root, "log", "-12", "--format=%h %s")
@@ -92,7 +92,7 @@ func loadData(root string) data {
 		if changes > 0 {
 			d.ProductSummary = fmt.Sprintf("%d changed paths | %s", changes, d.ProductSummary)
 		}
-		d.Product = "WORKING TREE\n\n" + status + "\n\nRECENT COMMITS\n\n" + commits + "\n\nEnter: inspect tracked changes (staged and unstaged)."
+		d.Product = documentSection("WORKING TREE", status) + documentSection("RECENT COMMITS", commits)
 		d.Diff = "UNSTAGED CHANGES\n\n" + gitText(root, "diff", "--stat") + "\n" + gitText(root, "diff", "--no-ext-diff", "--no-color") + "\n\nSTAGED CHANGES\n\n" + gitText(root, "diff", "--cached", "--no-ext-diff", "--no-color")
 	} else {
 		d.Product = "No company yet. Press c to set it up."
@@ -145,7 +145,7 @@ func loadData(root string) data {
 		}
 		for _, file := range []string{"instructions.md", "version.txt", "impressions.md", "abandoned.txt"} {
 			if _, err := os.Stat(filepath.Join(dir, file)); err == nil {
-				fmt.Fprintf(&b, "\n%s\n\n%s\n", file, readDocument(filepath.Join(dir, file), false))
+				b.WriteString(documentSection("FILE · "+file, readDocument(filepath.Join(dir, file), false)))
 			}
 		}
 		d.RunDocs[r.Name] = b.String()
@@ -478,4 +478,18 @@ func impressionExcerpt(text string) string {
 		return strings.Join(strings.Fields(line), " ")
 	}
 	return ""
+}
+
+// Only the config preview hides blank lines; the editable file is untouched.
+func nonemptyLines(text string) string {
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+func documentSection(title, text string) string {
+	return "\n── " + title + " ──\n" + strings.TrimSpace(text) + "\n"
 }

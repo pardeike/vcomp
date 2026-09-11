@@ -204,7 +204,11 @@ func (m *model) footer(w, h int) row {
 	case m.Detail == "agent" && m.Sub == 0:
 		return hints(w, size, "m", "message", "←→", "request", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "[ / ]", "request")
 	case m.Detail == "agent" && m.Sub == 2:
-		return hints(w, size, "v", "verbosity", "↑↓", "scroll", "Tab", "next tab", "Esc", "back", "a", "intervene", "m", "message")
+		state := "paused"
+		if m.Follow {
+			state = "following"
+		}
+		return hints(w, size, "v", "verbosity", "f", "follow ("+state+")", "↑↓", "scroll", "Tab", "next tab", "Esc", "back", "a", "intervene", "m", "message")
 	case m.Detail == "agent":
 		return hints(w, size, "m", "message", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "a", "intervene", "t", "steer", "p", "settings", "b", "replace", "e", "edit")
 	case m.Detail != "":
@@ -263,17 +267,31 @@ func (m *model) renderDocument(w, h int) []row {
 				body = append(body, row{Text: fmt.Sprintf(" Request %d of %d · %s", index+1, len(requests), requests[index].Name), Style: accent})
 			}
 		}
+		body = append(body, rule(w))
 	} else {
 		body = append(body, row{Text: " " + m.title(), Style: accent})
 	}
+	if m.Detail == "agent" && m.Sub == 2 {
+		if status, records, ok := strings.Cut(m.document(), "\n── "); ok {
+			title, content, _ := strings.Cut(records, "\n")
+			metadata := wrap(strings.TrimSpace(status), w-2)
+			limit := max(0, h-len(body)-4)
+			for _, line := range metadata[:min(len(metadata), limit)] {
+				body = append(body, row{Text: " " + line, Style: dim})
+			}
+			label := clip("── "+title, w-2)
+			body = append(body, row{Text: " " + label + strings.Repeat("─", max(0, w-width(label)-2)), Style: accent})
+			lines = wrap(content, w-2)
+		}
+	}
 	size := h - len(body)
-	if m.Screen == 5 && m.Detail == "" && m.Follow {
+	if m.Follow && (m.Screen == 5 && m.Detail == "" || m.Detail == "agent" && m.Sub == 2) {
 		m.Scroll = max(0, len(lines)-size)
 	}
 	m.Scroll = max(0, min(m.Scroll, max(0, len(lines)-size)))
 	if len(lines) > size {
 		position := fmt.Sprintf("%d-%d of %d", m.Scroll+1, min(len(lines), m.Scroll+size), len(lines))
-		if m.Screen == 5 && m.Detail == "" && m.Follow {
+		if m.Follow && (m.Screen == 5 && m.Detail == "" || m.Detail == "agent" && m.Sub == 2) {
 			position = "following · " + position
 		}
 		title := &body[0]
@@ -286,7 +304,11 @@ func (m *model) renderDocument(w, h int) []row {
 		}
 	}
 	for _, s := range lines[m.Scroll:min(len(lines), m.Scroll+size)] {
-		body = append(body, row{Text: " " + s})
+		if strings.HasPrefix(s, "── ") && strings.HasSuffix(s, " ──") {
+			body = append(body, row{Text: " " + s + strings.Repeat("─", max(0, w-width(s)-2)), Style: accent})
+		} else {
+			body = append(body, row{Text: " " + s})
+		}
 	}
 	return body
 }

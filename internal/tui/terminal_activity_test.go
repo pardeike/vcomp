@@ -32,3 +32,29 @@ func TestTerminalModesAndInterventionBoundary(t *testing.T) {
 		t.Fatal(c.TerminalView, err)
 	}
 }
+
+func TestTerminalFollowsChronologicallyAndFreezesWhileReading(t *testing.T) {
+	m := model{Screen: 0, Detail: "agent", Sub: 2, Follow: true, Data: data{View: engine.Observation{Agents: []engine.AgentView{{Name: "hr", Turns: engine.TurnStats{Known: true, Activity: strings.Repeat("Earlier record\n", 40) + "Newest record\n"}}}}}}
+	m.renderDocument(80, 20)
+	if m.Scroll == 0 {
+		t.Fatal("not following bottom")
+	}
+	m.key(key{Name: "up"})
+	frozen := m.document()
+	m.Data.View.Agents[0].Turns.Activity += "New arrival\n"
+	if m.Follow || m.document() != frozen {
+		t.Fatal("incoming output moved paused view")
+	}
+	m.key(key{Text: "f"})
+	if !m.Follow || !strings.Contains(m.document(), "New arrival") {
+		t.Fatal("follow did not resume")
+	}
+	rows := m.renderDocument(80, 20)
+	text := ""
+	for _, r := range rows {
+		text += r.Text + "\n"
+	}
+	if !strings.Contains(text, "Terminal · brief") || !strings.Contains(text, "New arrival") {
+		t.Fatal("status or latest record missing", text)
+	}
+}

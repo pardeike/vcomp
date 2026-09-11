@@ -5,11 +5,15 @@ import (
 	"strings"
 )
 
-// Bound display telemetry like other document previews. Newest records come first.
+// Bound display telemetry like other document previews. Keep the latest records in chronological order.
 func keepRecent(text string) string {
 	const limit = 256 * 1024
 	if len(text) > limit {
-		return text[:limit] + "\n[Older activity omitted]"
+		tail := text[len(text)-limit:]
+		if i := strings.Index(tail, "\n"); i >= 0 {
+			tail = tail[i+1:]
+		}
+		return "[Older activity omitted]\n" + tail
 	}
 	return text
 }

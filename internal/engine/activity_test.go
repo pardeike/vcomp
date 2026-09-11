@@ -21,3 +21,15 @@ func TestActivityKeepsToolsAndResultsWithoutDumpingThinking(t *testing.T) {
 		t.Fatal(brief)
 	}
 }
+
+func TestRecordedActivityUsesNormalTimeOrder(t *testing.T) {
+	cwd := t.TempDir()
+	header := `{"type":"session","cwd":` + string(mustJSON(cwd)) + "}\n"
+	first := `{"type":"message","timestamp":"2026-09-11T10:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"First action"}]}}` + "\n"
+	second := `{"type":"message","timestamp":"2026-09-11T10:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Second action"}]}}` + "\n"
+	stats := parseTurnStats(strings.NewReader(header+first+second), cwd)
+	if strings.Index(stats.Activity, "First action") < 0 || strings.Index(stats.Activity, "First action") > strings.Index(stats.Activity, "Second action") {
+		t.Fatal(stats.Activity)
+	}
+}
+func mustJSON(text string) []byte { b, _ := json.Marshal(text); return b }

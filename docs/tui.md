@@ -216,7 +216,8 @@ on other platforms `~` marks an estimate from directory modification time.
 
 The Terminal tab defaults to a read-only activity feed from OMP's session
 records. It uses the viewer's width rather than copying OMP's narrower layout.
-Newest records appear first, with timestamps, tool calls, results and responses.
+Records appear in normal chronological order, with timestamps, tool calls,
+results and responses. The view follows the newest output at the bottom.
 The current turn's elapsed time and latest-record age are shown explicitly.
 When available, the live terminal's current-operation line is shown verbatim.
 An active generation may not be persisted yet; a quiet transcript does not prove
@@ -233,3 +234,20 @@ Before attaching, the interface explains that keys reach the agent and that
 Escape may interrupt it. Ctrl-B then d returns when attached from a regular
 terminal; Ctrl-B then L returns when vcomp itself is inside tmux. For ordinary
 observation, remain in the Terminal tab, where keystrokes never reach OMP.
+
+## Document boundaries
+
+Settings hides blank lines in the configuration preview without rewriting the
+file. A labelled divider separates the file contents from vcomp's controls and
+settings explanation. Product status/commits, staged/unstaged diffs, Goal/Result,
+public test files, and profession definitions use the same labelled dividers.
+Keyboard hints remain in the footer rather than following product content.
+
+Employee detail separates the role tabs from the document with a rule. Terminal
+status is followed by a labelled Recorded activity or Raw terminal divider.
+
+The Terminal tab automatically follows new activity. Scrolling, Home or End
+pauses a snapshot of the document, so incoming records cannot shift the text
+being read. `f` resumes live updates and scrolls to the newest output. The footer
+shows following or paused. Entering Terminal or changing verbosity resumes
+following. This also applies to the raw terminal view.

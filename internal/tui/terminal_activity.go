@@ -17,10 +17,10 @@ func terminalActivity(a engine.AgentView, mode string) string {
 		header += "Error: " + a.Error + "\n"
 	}
 	if mode == "raw" {
-		return header + "\n" + strings.TrimSpace(a.Output)
+		return header + documentSection("RAW TERMINAL", a.Output)
 	}
 	if !a.Turns.Known {
-		return header + "Recorded activity unavailable for this session. Raw terminal follows.\n\n" + strings.TrimSpace(a.Output)
+		return header + "Recorded activity unavailable for this session.\n" + documentSection("RAW TERMINAL", a.Output)
 	}
 	if !a.Turns.Started.IsZero() {
 		header += fmt.Sprintf("Current turn started %s · elapsed %s\n", a.Turns.Started.Local().Format("15:04:05"), time.Since(a.Turns.Started).Round(time.Second))
@@ -28,7 +28,7 @@ func terminalActivity(a engine.AgentView, mode string) string {
 	if status := ompLiveLine(a.Output); status != "" {
 		header += "Live terminal: " + status + "\n"
 	}
-	header += "Recorded activity, newest first. In-flight generation may not be recorded yet.\n"
+	header += "Recorded activity, oldest to newest. In-flight generation may not be recorded yet.\n"
 	if !a.Turns.Latest.IsZero() {
 		header += "Latest record " + time.Since(a.Turns.Latest).Round(time.Second).String() + " ago\n"
 	}
@@ -39,7 +39,7 @@ func terminalActivity(a engine.AgentView, mode string) string {
 	if activity == "" {
 		activity = "No recorded messages yet."
 	}
-	return header + "\n" + activity
+	return header + documentSection("RECORDED ACTIVITY", activity)
 }
 
 // OMP puts a short current-operation line above its elapsed/model status row.
@@ -58,4 +58,10 @@ func ompLiveLine(output string) string {
 		}
 	}
 	return ""
+}
+
+func (m *model) pauseTerminal() {
+	if m.Detail == "agent" && m.Sub == 2 && m.TerminalSnapshot == "" && m.Selected < len(m.Data.View.Agents) {
+		m.TerminalSnapshot = terminalActivity(m.Data.View.Agents[m.Selected], m.Data.View.Config.TerminalView)
+	}
 }
