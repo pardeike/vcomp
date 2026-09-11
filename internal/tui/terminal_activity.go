@@ -68,3 +68,29 @@ func (m *model) pauseTerminal() {
 		m.TerminalSnapshot = terminalActivity(m.Data.View.Agents[m.Selected], m.Data.View.Config.TerminalView)
 	}
 }
+
+// Prefer conversation records over terminal chrome. This is the latest observed
+// activity, not a claim that the agent is still performing that operation.
+func dashboardActivity(a engine.AgentView) string {
+	text := a.Turns.Activity
+	if strings.TrimSpace(text) == "" {
+		if a.Harness == "omp" {
+			text = ompLiveLine(clean(a.Output))
+		} else {
+			text = clean(a.Output)
+		}
+	}
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.IndexFunc(line, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0 {
+			if a.Turns.Activity != "" && len(line) > 10 && line[8:10] == "  " {
+				if _, err := time.Parse("15:04:05", line[:8]); err == nil {
+					line = line[10:]
+				}
+			}
+			return line
+		}
+	}
+	return "—"
+}

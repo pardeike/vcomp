@@ -89,3 +89,24 @@ func TestDirectSteerAndBroadcastActions(t *testing.T) {
 		t.Fatal("not a broadcast")
 	}
 }
+
+func TestDashboardActivityDoesNotShowInputBorder(t *testing.T) {
+	a := engine.AgentView{Harness: "omp", Output: "  ⎋ Reading the project manifest\n ⠇ 2h > Qwen > context\n╰─\n"}
+	if got := dashboardActivity(a); got != "Reading the project manifest" {
+		t.Fatal(got)
+	}
+	a.Turns.Activity = "12:00:00  Tool: read\n\n12:01:00  Result: read: Package.swift\n\n"
+	if got := dashboardActivity(a); got != "Result: read: Package.swift" {
+		t.Fatal(got)
+	}
+	a = engine.AgentView{Output: "╰─\n ───── \n"}
+	if got := dashboardActivity(a); got != "—" {
+		t.Fatal(got)
+	}
+	m := fixture()
+	m.Data.View.Agents[0] = engine.AgentView{Name: "ceo", Harness: "omp", Output: "╰─", Turns: engine.TurnStats{Activity: "13:00:00  Tool: read"}}
+	text := draw(m.render(240, 45), false)
+	if !strings.Contains(text, "Activity") || !strings.Contains(text, "Tool: read") || strings.Contains(text, "Last line") {
+		t.Fatal(text)
+	}
+}

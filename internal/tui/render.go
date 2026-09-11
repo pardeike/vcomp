@@ -401,45 +401,58 @@ func (m *model) dashboard(w, h int) []row {
 	if !wide && h >= 17 {
 		listH = max(5, h*2/3-len(rows)-1)
 	}
-	nameW := 8
+	nameW, stateW, cliW, avgW, inboxW, turnsW := 5, 5, 3, 3, 2, 1
 	for _, a := range m.Data.View.Agents {
 		nameW = min(24, max(nameW, width(a.Name)))
+		inboxW = max(inboxW, width(fmt.Sprint(a.Inbox)))
+		if a.Turns.Known {
+			turnsW = max(turnsW, width(fmt.Sprint(a.Turns.Completed)))
+		}
+		stateW = max(stateW, width(a.State))
+		cliW = min(12, max(cliW, width(a.Harness)))
+		if a.Turns.Known && a.Turns.Completed > 0 {
+			avgW = min(12, max(avgW, width(a.Turns.Average.Round(time.Second).String())))
+		}
 	}
 	// Timing takes priority over CLI/idle. Add each column independently so
 	// smaller terminals use their spare cells instead of hiding the whole set.
-	baseWidth := 3 + nameW + 2 + 9 + 2 + 5
-	fullWidth := baseWidth + 23 + 16
+	baseWidth := 3 + nameW + 1 + stateW + 1 + inboxW
+	timingWidth := 1 + turnsW + 9 + 1 + avgW
+	fullWidth := baseWidth + timingWidth + 1 + cliW + 1 + 4
 	if wide && w >= fullWidth+1+3+40 {
 		listW = max(listW, fullWidth+1)
 	}
-	showTurns := listW >= baseWidth+6+1
-	showStarted := listW >= baseWidth+15+1
-	showAverage := listW >= baseWidth+23+1
+	if wide && w >= fullWidth+19+3+40 {
+		listW = max(listW, fullWidth+19)
+	}
+	showTurns := listW >= baseWidth+1+turnsW+1
+	showStarted := listW >= baseWidth+1+turnsW+9+1
+	showAverage := listW >= baseWidth+timingWidth+1
 	showCLI := listW >= fullWidth+1
-	showLastLine := listW >= fullWidth+18+1
-	header := "   " + pad("Agent", nameW) + "  " + pad("State", 9) + "  Inbox"
+	showActivity := listW >= fullWidth+18+1
+	header := "   " + pad("Agent", nameW) + " " + pad("State", stateW) + fmt.Sprintf(" %*s", inboxW, "In")
 	if showCLI {
-		header += "  " + pad("CLI", 8) + "  Idle"
+		header += " " + pad("CLI", cliW) + " Idle"
 	}
 	if showTurns {
-		header += fmt.Sprintf(" %5s", "Turns")
+		header += fmt.Sprintf(" %*s", turnsW, "#")
 	}
 	if showStarted {
 		header += fmt.Sprintf(" %-8s", "Started")
 	}
 	if showAverage {
-		header += fmt.Sprintf(" %7s", "Avg")
+		header += fmt.Sprintf(" %*s", avgW, "Avg")
 	}
-	if showLastLine {
-		header += "  Last line"
+	if showActivity {
+		header += "  Activity"
 	}
 	rows = append(rows, row{Text: header, Style: dim})
 	start := max(0, m.Selected-listH+1)
 	for i := start; i < min(m.count(), start+listH); i++ {
 		a := m.Data.View.Agents[i]
-		cells := []span{{pad(a.Name, nameW) + "  ", ""}, {pad(a.State, 9), stateStyle(a.State)}, {fmt.Sprintf("  %5d", a.Inbox), ""}}
+		cells := []span{{pad(a.Name, nameW) + " ", ""}, {pad(a.State, stateW), stateStyle(a.State)}, {fmt.Sprintf(" %*d", inboxW, a.Inbox), ""}}
 		if showCLI {
-			cells = append(cells, span{fmt.Sprintf("  %s  %4d", pad(a.Harness, 8), a.Idle), ""})
+			cells = append(cells, span{fmt.Sprintf(" %s %4d", pad(a.Harness, cliW), a.Idle), ""})
 		}
 		if showTurns {
 			count, started, average := "—", "—", "—"
@@ -452,17 +465,16 @@ func (m *model) dashboard(w, h int) []row {
 					average = a.Turns.Average.Round(time.Second).String()
 				}
 			}
-			cells = append(cells, span{fmt.Sprintf(" %5s", clip(count, 5)), dim})
+			cells = append(cells, span{fmt.Sprintf(" %*s", turnsW, count), dim})
 			if showStarted {
 				cells = append(cells, span{fmt.Sprintf(" %-8s", started), dim})
 			}
 			if showAverage {
-				cells = append(cells, span{fmt.Sprintf(" %7s", clip(average, 7)), dim})
+				cells = append(cells, span{fmt.Sprintf(" %*s", avgW, clip(average, avgW)), dim})
 			}
 		}
-		if showLastLine {
-			lines := strings.Split(strings.TrimSpace(clean(a.Output)), "\n")
-			cells = append(cells, span{"  " + strings.TrimSpace(lines[len(lines)-1]), dim})
+		if showActivity {
+			cells = append(cells, span{"  " + dashboardActivity(a), dim})
 		}
 		r := row{}
 		if i == m.Selected {

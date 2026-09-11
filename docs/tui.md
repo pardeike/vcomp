@@ -130,8 +130,8 @@ edit, and shell tools. That small check is not evidence for a whole company run.
 
 ## Dashboard progress
 
-As width becomes available, the role table progressively adds `Turns`, `Started`, and `Avg`
-columns, prioritizing them over CLI and idle counts. `Turns` counts completed prompt-to-final-response assignments in the
+As width becomes available, the role table progressively adds `#`, `Started`, and `Avg`
+columns, prioritizing them over CLI and idle counts. `#` counts completed prompt-to-final-response assignments in the
 current OMP conversation. Thinking, tool calls, automatic model retries, and
 server queue time belong to that assignment. `Started` is the active turn's
 local start time, with no repeated label in individual rows. The average uses
@@ -277,3 +277,8 @@ This is separate from `m` inbox messages, `t` persistent role steering, and `a`
 interactive terminal intervention. Direct steering preserves the conversation
 and does not edit the role, backstory or inbox. Immediate delivery goes ahead of
 vcomp's queued prompts; earlier queued prompts remain pending.
+
+The dashboard labels inbox depth `In` and sizes columns to their current contents.
+`Activity` shows the latest recorded event, falling back to terminal text when
+records are unavailable; border-only lines are omitted. It is the latest observed
+activity, not proof that the same operation is still running.
