@@ -60,7 +60,18 @@ func gitText(root string, args ...string) string {
 	return strings.TrimSpace(string(b))
 }
 func loadData(root string) data {
-	d := data{Inboxes: map[string][]inboxRequest{}, View: engine.Observe(root), AgentDocs: map[string][]string{}, RunDocs: map[string]string{}, Positions: bootstrap.Load(root).Positions()}
+	d := data{RunExcerpts: map[string]string{}, PositionDocs: map[string]string{}, Catalogue: bootstrap.Load(root).Catalogue(), Inboxes: map[string][]inboxRequest{}, View: engine.Observe(root), AgentDocs: map[string][]string{}, RunDocs: map[string]string{}, Positions: bootstrap.Load(root).Positions()}
+	for _, p := range d.Catalogue {
+		text, err := bootstrap.Load(root).PositionText(p.Name)
+		if err != nil {
+			text = err.Error()
+		}
+		status := "Active"
+		if p.Deleted {
+			status = "Deleted from catalogue; retained for existing employees"
+		}
+		d.PositionDocs[p.Name] = "Source: " + p.Source + "\n" + status + "\n\nShared profession definition. Backstories belong to individual hires.\n\n" + text
+	}
 	d.Goal = readDocument(filepath.Join(root, space.SpacesDir, "ceo", "goal.md"), false)
 	if d.View.Config.ResultFile != "" {
 		d.Result = readDocument(filepath.Join(root, d.View.Config.ResultFile), false)
@@ -68,7 +79,7 @@ func loadData(root string) data {
 		d.Result = "No result file configured."
 	}
 	d.Log = readDocument(filepath.Join(config.LocalDir(root), "engine.log"), true)
-	d.Settings = "COMPANY OVERRIDES\n" + filepath.Join(config.LocalDir(root), config.FileName) + "\n\n" + readDocument(filepath.Join(config.LocalDir(root), config.FileName), false) + "\n\nEnter / c: change common settings\ne: edit the full file\n\nResolution: built-in defaults, then ~/.vcomp, then this company.\nChanges are loaded at engine ticks. Model/harness changes apply on restart."
+	d.Settings = "COMPANY OVERRIDES\n" + filepath.Join(config.LocalDir(root), config.FileName) + "\n\n" + readDocument(filepath.Join(config.LocalDir(root), config.FileName), false) + "\n\nEnter / c: change common settings\ne: edit the full file\n\nResolution: built-in defaults, then ~/.vcomp, then this company.\nChanges are loaded at engine ticks. Model/harness changes apply on restart.\n\ng: Role generation settings (independent model and CLI)."
 	if d.View.Exists {
 		status := gitText(root, "status", "--short", "--branch")
 		commits := gitText(root, "log", "-12", "--format=%h %s")
@@ -115,6 +126,23 @@ func loadData(root string) data {
 		dir := filepath.Join(root, space.PublicDir, r.Name)
 		var b strings.Builder
 		fmt.Fprintf(&b, "%s / %s\n", r.Name, r.State)
+		if !r.Created.IsZero() {
+			label := "Created"
+			if r.CreatedApprox {
+				label = "Created estimate (directory modified time)"
+			}
+			fmt.Fprintf(&b, "%s: %s\n", label, r.Created.Local().Format("2006-01-02 15:04:05 MST"))
+		}
+		fmt.Fprintf(&b, "Attempts: %d\n", r.Attempts)
+		if r.State == "evaluating" {
+			b.WriteString("Reviewer session is alive; this does not prove active model progress.\n")
+		}
+		for _, file := range []string{"impressions.md", "abandoned.txt"} {
+			if _, err := os.Stat(filepath.Join(dir, file)); err == nil {
+				d.RunExcerpts[r.Name] = impressionExcerpt(readDocument(filepath.Join(dir, file), false))
+				break
+			}
+		}
 		for _, file := range []string{"instructions.md", "version.txt", "impressions.md", "abandoned.txt"} {
 			if _, err := os.Stat(filepath.Join(dir, file)); err == nil {
 				fmt.Fprintf(&b, "\n%s\n\n%s\n", file, readDocument(filepath.Join(dir, file), false))
@@ -122,6 +150,7 @@ func loadData(root string) data {
 		}
 		d.RunDocs[r.Name] = b.String()
 	}
+	sortData(&d)
 	return d
 }
 
@@ -437,4 +466,16 @@ func saveRoleSettings(root string, values []string) error {
 		return err
 	}
 	return config.UpdateLocal(root, updates)
+}
+
+// Show an actual content excerpt, never an inferred verdict.
+func impressionExcerpt(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "```") || line == "---" {
+			continue
+		}
+		return strings.Join(strings.Fields(line), " ")
+	}
+	return ""
 }

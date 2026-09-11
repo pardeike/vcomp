@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"vcomp/internal/bootstrap"
 	"vcomp/internal/config"
 	"vcomp/internal/engine"
 )
@@ -689,5 +690,73 @@ func TestInboxFirstRequestStaysSelectedOnFirstRefresh(t *testing.T) {
 	m.update(d)
 	if m.document() != "Original first" || m.Scroll != 4 {
 		t.Fatal("first refresh changed request or scroll")
+	}
+}
+
+func TestCatalogueInspectionHiringAndDraftActions(t *testing.T) {
+	m := fixture()
+	m.Screen = 6
+	m.Data.Catalogue = []bootstrap.Position{{Name: "designer", Title: "Designer", Sector: "universal"}, {Name: "old-role", Title: "Old Role", Sector: "universal", Deleted: true}}
+	m.Data.PositionDocs = map[string]string{"designer": "Shared professional remit"}
+	if m.count() != 1 {
+		t.Fatal("deleted role shown by default")
+	}
+	if action := m.key(key{Name: "enter"}); action != nil || m.Detail != "profession" || m.document() != "Shared professional remit" {
+		t.Fatal("Enter should inspect, not hire")
+	}
+	if action := m.key(key{Text: "h"}); action == nil || action.Kind != "hire-form" {
+		t.Fatal("missing separate hiring action")
+	}
+	if action := m.key(key{Text: "e"}); action == nil || action.Kind != "profession-edit-form" {
+		t.Fatal("edit does not select profession editing")
+	}
+	m.key(key{Text: "z"})
+	if m.count() != 2 || m.Detail != "" {
+		t.Fatal("deleted catalogue toggle failed")
+	}
+	m.Draft = &professionDraft{Name: "new-role", Scope: "company", Text: "Draft text"}
+	m.Detail = "profession-draft"
+	if !strings.Contains(m.document(), "Draft text") {
+		t.Fatal("draft not reviewable")
+	}
+	if action := m.key(key{Text: "s"}); action == nil || action.Kind != "profession-save-confirm" {
+		t.Fatal("draft saved without review confirmation")
+	}
+}
+
+func TestRoleGenerationSettingsHaveIndependentScopes(t *testing.T) {
+	t.Setenv(config.HomeEnv, t.TempDir())
+	root := t.TempDir()
+	before := config.Default()
+	values := []string{"global", "author-model", "high", "2m", "fake-author --model {{model}}"}
+	if err := saveGenerationSettings(root, values); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RoleGenerator.Model != "author-model" || c.Harnesses[c.Harness].Model != before.Harnesses[before.Harness].Model {
+		t.Fatal("authoring settings altered employees")
+	}
+	values[0], values[1] = "company", "company-author"
+	if err := saveGenerationSettings(root, values); err != nil {
+		t.Fatal(err)
+	}
+	f, err := generationSettingsForm(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Fields[1].Value != "author-model" {
+		t.Fatal("global form inherited company model")
+	}
+	f.Fields[0].Value = "company"
+	f.Changed(f, 0)
+	if f.Fields[1].Value != "company-author" {
+		t.Fatal("company scope did not load override")
+	}
+	other, err := config.Load(t.TempDir())
+	if err != nil || other.RoleGenerator.Model != "author-model" {
+		t.Fatal("company override leaked")
 	}
 }

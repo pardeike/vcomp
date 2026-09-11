@@ -28,7 +28,12 @@ type AgentView struct {
 	Turns                                               TurnStats
 }
 
-type RunView struct{ Name, State, Session string }
+type RunView struct {
+	Name, State, Session string
+	Created              time.Time
+	CreatedApprox        bool
+	Attempts             int
+}
 
 type Observation struct {
 	Root                         string
@@ -152,6 +157,10 @@ func Observe(root string) Observation {
 	}
 	for _, r := range space.Runs(root) {
 		rv := RunView{Name: r.Name, State: "pending"}
+		rv.Created, rv.CreatedApprox = r.Created()
+		if s := saved.Runs[r.Name]; s != nil {
+			rv.Attempts = s.Attempts
+		}
 		sess := r.Session(v.Config.SessionPrefix)
 		if s := saved.Runs[r.Name]; s != nil && s.Session != "" {
 			sess = s.Session
@@ -167,11 +176,19 @@ func Observe(root string) Observation {
 		}
 		switch {
 		case r.Done():
-			rv.State = "impressions"
+			rv.State = "done"
 		case r.GivenUp():
 			rv.State = "abandoned"
 		case rv.Session != "" && tmux.Alive(sess):
-			rv.State = "live"
+			rv.State = "evaluating"
+			if s := saved.Runs[r.Name]; s != nil && (s.NeedShake || s.NeedPrompt) {
+				rv.State = "starting"
+			}
+		case rv.Attempts > 0:
+			rv.State = "retry pending"
+		}
+		if !r.Done() && !r.GivenUp() && rv.State == "pending" && !v.Supervised {
+			rv.State = "waiting"
 		}
 		v.Runs = append(v.Runs, rv)
 	}

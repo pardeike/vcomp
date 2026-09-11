@@ -84,7 +84,15 @@ type Role struct {
 	Prompts        map[string]string
 }
 
+type RoleGenerator struct {
+	Command       []string
+	Model, Effort string
+	Timeout       time.Duration
+}
+
 type Config struct {
+	UISort           map[string]string
+	RoleGenerator    RoleGenerator
 	Tick             time.Duration
 	TUIRefresh       time.Duration
 	IdleTicks        int
@@ -328,6 +336,29 @@ func (c *Config) setTop(key, value string) error {
 		return nil
 	}
 	switch key {
+	case "dashboard_sort", "catalogue_sort", "public_tests_sort":
+		field := strings.TrimPrefix(value, "-")
+		valid := false
+		for _, option := range SortFields(key) {
+			if field == option {
+				valid = true
+			}
+		}
+		if !valid {
+			return fmt.Errorf("invalid %s value %q", key, value)
+		}
+		if c.UISort == nil {
+			c.UISort = map[string]string{}
+		}
+		c.UISort[key] = value
+	case "role_generation_command":
+		c.RoleGenerator.Command = strings.Fields(value)
+	case "role_generation_model":
+		c.RoleGenerator.Model = value
+	case "role_generation_effort":
+		c.RoleGenerator.Effort = value
+	case "role_generation_timeout":
+		return dur(&c.RoleGenerator.Timeout)
 	case "tui_refresh":
 		return dur(&c.TUIRefresh)
 	case "tick":
@@ -568,7 +599,12 @@ func firstNonEmpty(vs ...string) string {
 // UpdateLocal preserves existing settings, including those setup does not ask
 // about. Repeated sections are accepted by the same parser as normal config.
 func UpdateLocal(root string, updates []Override) error {
-	p := filepath.Join(LocalDir(root), FileName)
+	return updateFile(filepath.Join(LocalDir(root), FileName), updates)
+}
+func UpdateGlobal(updates []Override) error {
+	return updateFile(filepath.Join(Home(), FileName), updates)
+}
+func updateFile(p string, updates []Override) error {
 	b, err := os.ReadFile(p)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -611,8 +647,25 @@ func UpdateLocal(root string, updates []Override) error {
 	if _, err := Parse(text); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(LocalDir(root), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return err
 	}
 	return space.WriteFile(p, []byte(text), 0644)
+}
+
+func (c Config) RoleGenerationCommand() []string {
+	return expand(c.RoleGenerator.Command, map[string]string{"model": c.RoleGenerator.Model, "effort": c.RoleGenerator.Effort})
+}
+
+// SortFields are display choices only; the engine never orders work with them.
+func SortFields(key string) []string {
+	switch key {
+	case "dashboard_sort":
+		return []string{"name", "state", "inbox", "turns", "started", "average", "harness"}
+	case "catalogue_sort":
+		return []string{"name", "title", "sector", "state"}
+	case "public_tests_sort":
+		return []string{"name", "created", "state", "attempts"}
+	}
+	return nil
 }

@@ -22,7 +22,8 @@ The main screens are:
   A new company starts with a form; cancelling writes nothing.
 - **Goal / result:** the CEO's goal and final answer, preserving their actual text.
 - **Activity:** the engine log, with scrolling and a return-to-latest action.
-- **Role catalogue:** available professions, with a hire form.
+- **Role catalogue:** shared profession definitions, their source and status,
+  with create, inspect, edit, delete, restore, generate, and separate hiring actions.
 
 Main screen names stay the same at every terminal width. When all screen tabs
 do not fit, the header shows the current screen name and number. Tab cycles
@@ -153,3 +154,60 @@ the current selection; if the selected request disappears, the view selects
 the next available request, or the last one if it was at the end. Taller dashboards show up to three recent product
 commit messages above the role table; the Product screen retains the longer
 history. These additions shrink or disappear when the terminal lacks space.
+
+## Profession catalogue
+
+On screen 7, Enter reads the selected profession's fixed definition, including
+its remit, bias, backstory sector and source file. `h` hires a person from that
+profession; the hire form's backstory belongs only to that person.
+
+`n` creates a profession, either generated or written manually. `e` edits the
+selected definition in `$EDITOR`; `g` generates a replacement draft. Both paths
+show a draft first. Use `e` to revise it, then `s` or Ctrl-S to validate and save
+with confirmation. Escape leaves the draft without installing it. Choose
+**My defaults** for all companies or **This company only** for an override.
+Changing an existing profession changes its employees' rendered roles and causes
+the engine to replace their conversations on the next tick.
+
+`d` deletes a profession from hiring, retaining its definition for existing
+employees. `z` shows deleted professions and `u` restores one. A company
+can override a global deletion with its own saved definition.
+
+`p` opens role generation settings; the same form is available with `g` on
+Settings. Model, effort, timeout and CLI command can be saved globally or for
+one company. These settings are independent of employee and public tester
+models. The display continues refreshing during generation; Ctrl-C cancels and exits.
+Generation does not hire anyone.
+
+## Messages from the user
+
+Select an employee on the dashboard, or open any of their detail tabs, and press
+`m`. Enter a subject and message, or choose a file for a multiline body, then
+Ctrl-S sends it. This works for the CEO too.
+
+The request folder is `URGENT - FROM USER - <subject> - <unique suffix>`.
+The subject is sanitized for filesystem use, without colons or path separators.
+The message itself starts with `FROM USER`. Delivery does not interrupt the
+employee, alter their role, or force reading. It follows normal inbox handling.
+Steering remains a persistent instruction change and is separate from messages.
+
+Employee detail identifies the current role in uppercase reverse video above
+the content. The top row starts with the company name, without a vcomp prefix.
+
+## Table sorting and public test progress
+
+On Dashboard, Public tests or Role catalogue, press `S` to choose a sort field
+and direction, then Ctrl-S saves it for this company. Each table remembers its
+own setting after restart. Refresh and sorting preserve the selected item by
+name. Dashboard supports name, state, inbox count, completed turns, current
+turn start, average turn duration and harness. Catalogue supports name, title,
+sector and active/deleted state. Public tests supports name, creation time,
+state and attempt count. Ties use names for stable ordering.
+
+The public tests table shows creation date and time plus pending, waiting,
+starting, evaluating, retry pending, done or abandoned state. Evaluating means
+the reviewer session is alive; it does not prove ongoing model progress. Done
+means impressions exist, not that the product passed. Wider terminals also
+show the attempt count and a literal excerpt from impressions or abandonment.
+Enter opens the full text and timestamp. macOS uses filesystem birth time;
+on other platforms `~` marks an estimate from directory modification time.

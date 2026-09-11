@@ -92,3 +92,32 @@ and writable - `~/Scripts`, `~/bin`, `~/.local/bin`, `/usr/local/bin`,
 `/opt/homebrew/bin`, in that order, preferring user-owned ones so nothing needs
 sudo - then runs `vcomp install` to populate `~/.vcomp/`. `BIN_DIR=… ./install.sh`
 overrides the choice.
+
+## Scripted profession management
+
+These commands expose the same catalogue operations as the terminal interface.
+The default scope is `company`; use `-scope global` for personal defaults.
+
+```sh
+vcomp profession list -root /tmp/vgame
+vcomp profession show graphic-designer -root /tmp/vgame
+vcomp profession generate example-role -brief "Describe the profession" > /tmp/example-role.md
+vcomp profession create example-role -file /tmp/example-role.md -scope global
+vcomp profession update example-role -file /tmp/example-role.md -scope global
+vcomp profession delete example-role -scope global
+vcomp profession restore example-role -scope global
+```
+
+Generation only prints a draft. Create and update validate the title, sector and
+professional sections before writing. Listing includes deleted entries and the
+source of each definition. Hiring remains `vcomp hire NAME -position PROFESSION`.
+
+Send a one-off inbox message to any employee, including the CEO:
+
+```sh
+vcomp message ceo -root /tmp/vgame -subject "Graphic designer joined late" -text "Please coordinate with the new graphic designer."
+```
+
+Use `-file FILE` for a multiline message. On an interactive terminal,
+`vcomp message ceo` opens the message form. The request is marked FROM USER and
+URGENT in its folder name, but receives ordinary inbox handling.

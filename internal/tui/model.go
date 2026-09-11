@@ -20,12 +20,22 @@ type data struct {
 	AgentDocs                                  map[string][]string
 	RunDocs                                    map[string]string
 	Positions                                  []bootstrap.Position
+	RunExcerpts                                map[string]string
+	Catalogue                                  []bootstrap.Position
+	PositionDocs                               map[string]string
 }
 type action struct {
 	Kind   string
 	Values []string
 }
+type professionDraft struct {
+	Name, Scope, Text string
+	Create            bool
+}
+
 type model struct {
+	Draft                         *professionDraft
+	ShowDeleted                   bool
 	Root                          string
 	Screen, Selected, Scroll, Sub int
 	Detail                        string
@@ -47,7 +57,7 @@ func (m *model) count() int {
 	case 1:
 		return len(m.Data.View.Runs)
 	case 6:
-		return len(m.Data.Positions)
+		return len(m.catalogue())
 	}
 	return 0
 }
@@ -67,6 +77,8 @@ func (m *model) update(d data) {
 	name := ""
 	if m.Screen == 0 {
 		name = m.agent()
+	} else if m.Screen == 6 {
+		name = m.profession().Name
 	} else if m.Screen == 1 {
 		name = m.run()
 	}
@@ -81,6 +93,12 @@ func (m *model) update(d data) {
 		if m.Screen == 0 {
 			for i, a := range d.View.Agents {
 				if a.Name == name {
+					m.Selected = i
+				}
+			}
+		} else if m.Screen == 6 {
+			for i, p := range m.catalogue() {
+				if p.Name == name {
 					m.Selected = i
 				}
 			}
@@ -159,6 +177,45 @@ func (m *model) key(k key) *action {
 		m.Detail = "help"
 		m.Scroll = 0
 		return nil
+	}
+	if m.Detail == "profession-draft" {
+		switch k.Text {
+		case "e":
+			return &action{Kind: "profession-draft-edit"}
+		case "s":
+			return &action{Kind: "profession-save-confirm"}
+		}
+		if k.Name == "save" {
+			return &action{Kind: "profession-save-confirm"}
+		}
+	}
+	if m.Screen == 6 && (m.Detail == "" || m.Detail == "profession") {
+		switch k.Text {
+		case "n":
+			return &action{Kind: "profession-new-form"}
+		case "e":
+			return &action{Kind: "profession-edit-form"}
+		case "g":
+			return &action{Kind: "profession-generate-form"}
+		case "d":
+			return &action{Kind: "profession-delete-form"}
+		case "u":
+			return &action{Kind: "profession-restore-form"}
+		case "p":
+			return &action{Kind: "generation-settings-form"}
+		case "z":
+			m.ShowDeleted = !m.ShowDeleted
+			m.Selected = 0
+			m.Detail = ""
+			m.Scroll = 0
+			return nil
+		}
+	}
+	if m.Screen == 3 && m.Detail == "" && k.Text == "g" {
+		return &action{Kind: "generation-settings-form"}
+	}
+	if k.Text == "S" && m.Detail == "" && sortKey(m.Screen) != "" {
+		return &action{Kind: "sort-form"}
 	}
 	if k.Name == "tab" || k.Name == "backtab" {
 		if m.Detail == "agent" {
@@ -257,7 +314,11 @@ func (m *model) key(k key) *action {
 		case 3:
 			return &action{Kind: "settings-form"}
 		case 6:
-			return &action{Kind: "hire-form"}
+			if m.profession().Name != "" {
+				m.Detail = "profession"
+				m.Scroll = 0
+			}
+			return nil
 		}
 		return nil
 	}
@@ -271,6 +332,10 @@ func (m *model) key(k key) *action {
 		return &action{Kind: "reset-confirm"}
 	case "h":
 		return &action{Kind: "hire-form"}
+	case "m":
+		if m.Screen == 0 && m.agent() != "" {
+			return &action{Kind: "message-form", Values: []string{m.agent()}}
+		}
 	case "t":
 		if m.Screen == 0 && m.agent() != "" {
 			return &action{Kind: "steer-form", Values: []string{m.agent()}}
@@ -337,6 +402,13 @@ func (m *model) document() string {
 			return docs[m.Sub]
 		}
 		return "No content available."
+	case "profession":
+		return m.Data.PositionDocs[m.profession().Name]
+	case "profession-draft":
+		if m.Draft != nil {
+			return "Scope: " + m.Draft.Scope + "\nDraft only. Edit with e; save with s.\nSaving a changed definition replaces affected running employees on their next engine tick.\n\n" + m.Draft.Text
+		}
+		return "No draft."
 	case "run":
 		return m.Data.RunDocs[m.run()]
 	case "diff":
@@ -354,7 +426,29 @@ func (m *model) document() string {
 	}
 	return ""
 }
+func (m *model) catalogue() []bootstrap.Position {
+	var entries []bootstrap.Position
+	for _, p := range m.Data.Catalogue {
+		if m.ShowDeleted || !p.Deleted {
+			entries = append(entries, p)
+		}
+	}
+	return entries
+}
+func (m *model) profession() bootstrap.Position {
+	entries := m.catalogue()
+	if m.Selected >= 0 && m.Selected < len(entries) {
+		return entries[m.Selected]
+	}
+	return bootstrap.Position{}
+}
 func (m *model) title() string {
+	if m.Detail == "profession" {
+		return m.profession().Name + " / profession definition"
+	}
+	if m.Detail == "profession-draft" && m.Draft != nil {
+		return m.Draft.Name + " / draft"
+	}
 	if m.Detail == "agent" {
 		return m.agent() + " / " + []string{"Inbox", "Notes", "Terminal", "Goals", "Role"}[m.Sub]
 	}
@@ -379,7 +473,8 @@ Tab / Shift-Tab  Next/previous screen; in employee detail, next/previous tab
 Up/Down or j/k   Select a list item or scroll content
 PageUp/PageDown  Move a page
 Home/End         First/last list item or top/bottom of content
-Enter            Inspect an item; edit settings; hire from catalogue
+S                Sort the current table (saved for this company)
+Enter            Inspect an item or profession; edit settings
 Esc              Back / cancel
 f                Return the activity view to its latest lines
 
@@ -396,9 +491,20 @@ SELECTED EMPLOYEE
  Left/Right or [ / ]   Previous/next request in the Inbox tab
  a   Watch its tmux session; detach with Ctrl-B then d
      Inside tmux: Ctrl-B then L returns to the dashboard
+ m   Send an inbox message FROM USER
  t   Edit CEO steering for this employee
  b   Replace its backstory, retaining profession and steering
  p   Set its harness, model, effort, and nudge pacing
+
+ROLE CATALOGUE
+ Enter   Inspect the shared profession definition and its source
+ n       New profession (generate or write manually)
+ e / g   Edit / regenerate a profession as a draft
+ s       Save the displayed draft after confirmation
+ d / u   Delete from catalogue / restore, choosing company or global scope
+ z       Show or hide deleted professions
+ h       Hire one employee with a personal backstory
+ p       Role generation defaults (also g on Settings)
 
 FILES AND FORMS
  e   Open the settings file, goal, or selected editable file in $EDITOR

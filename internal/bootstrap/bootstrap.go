@@ -33,9 +33,11 @@ const PositionsDir = "positions"
 
 // Position is one entry in that catalogue.
 type Position struct {
-	Name   string
-	Title  string
-	Sector string
+	Name    string
+	Title   string
+	Sector  string
+	Source  string
+	Deleted bool
 }
 
 // Set renders documents, looking through a chain of override directories
@@ -51,8 +53,10 @@ func (s Set) Archetype(name string) string {
 	if base == "project-master" {
 		base = "project-manager"
 	}
-	if _, err := s.read(path.Join(PositionsDir, base+".md")); err == nil {
-		return base
+	if !s.positionDeleted(base) {
+		if _, err := s.read(path.Join(PositionsDir, base+".md")); err == nil {
+			return base
+		}
 	}
 	return ""
 }
@@ -204,10 +208,21 @@ func splitPosition(body string) (title, sector, remit string) {
 
 // Positions lists the role catalogue, sorted by sector then name.
 func (s Set) Positions() []Position {
+	var active []Position
+	for _, p := range s.Catalogue() {
+		if !p.Deleted {
+			active = append(active, p)
+		}
+	}
+	return active
+}
+func (s Set) Catalogue() []Position {
 	names := map[string]bool{}
 	if entries, err := fs.ReadDir(builtin, path.Join("templates", PositionsDir)); err == nil {
 		for _, e := range entries {
-			names[strings.TrimSuffix(e.Name(), ".md")] = true
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+				names[strings.TrimSuffix(e.Name(), ".md")] = true
+			}
 		}
 	}
 	for _, dir := range s.dirs {
@@ -216,7 +231,9 @@ func (s Set) Positions() []Position {
 			continue
 		}
 		for _, e := range entries {
-			names[strings.TrimSuffix(e.Name(), ".md")] = true
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+				names[strings.TrimSuffix(e.Name(), ".md")] = true
+			}
 		}
 	}
 	var out []Position
@@ -226,7 +243,7 @@ func (s Set) Positions() []Position {
 			continue
 		}
 		title, sector, _ := splitPosition(body)
-		out = append(out, Position{Name: name, Title: title, Sector: sector})
+		out = append(out, Position{Name: name, Title: title, Sector: sector, Source: s.positionSource(name), Deleted: s.positionDeleted(name)})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Sector != out[j].Sector {
@@ -457,6 +474,9 @@ func Hire(root string, cfg config.Config, name, position, backstory string, repl
 		}
 		if position == "" {
 			return fmt.Errorf("%q needs -position from vcomp roles", name)
+		}
+		if Load(root).positionDeleted(position) {
+			return fmt.Errorf("profession %s is deleted from the catalogue", position)
 		}
 		spec = RoleSpec{Position: position, Backstory: backstory}
 	}

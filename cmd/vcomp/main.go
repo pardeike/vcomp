@@ -29,7 +29,9 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp setup    [-root DIR]            ask for settings, save only what differs
   vcomp run      [-root DIR] [-goal ..] keep the company alive (foreground)
   vcomp roles    [-root DIR]            list the role names you can put in a roster
+  vcomp profession list|show|create|update|delete|restore|generate [NAME] [-scope company|global] [-file FILE] [-brief TEXT]
   vcomp hire     NAME [-position P] [-backstory "..."] [-replace]
+  vcomp message  NAME [-root DIR] -subject "..." [-text "..."] [-file FILE]
   vcomp steer    NAME [-root DIR] [-text "..."] [-file FILE]
   vcomp status   [-root DIR]
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
@@ -75,8 +77,12 @@ func main() {
 			err = cmdRun(args)
 		case "roles":
 			err = cmdRoles(args)
+		case "profession":
+			err = cmdProfession(args)
 		case "hire":
 			err = cmdHire(args)
+		case "message":
+			err = cmdMessage(args)
 		case "steer":
 			err = cmdSteer(args)
 		case "status":

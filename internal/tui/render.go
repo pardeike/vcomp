@@ -77,14 +77,33 @@ func (m *model) render(w, h int) []row {
 	case m.Screen == 0:
 		body = m.dashboard(w, contentH)
 	case m.Screen == 1:
-		body = m.list(w, contentH, "Public user tests", "Enter read · n new test", []string{"Run", "State"}, func(i int) []string {
+		columns := []string{"Run", "State", "Created"}
+		if w >= 95 {
+			columns = append(columns, "Attempt", "Impressions excerpt")
+		}
+		body = m.list(w, contentH, "Public user tests", "S sort: "+m.Data.View.Config.UISort["public_tests_sort"], columns, func(i int) []string {
 			r := m.Data.View.Runs[i]
-			return []string{r.Name, r.State}
+			created := "—"
+			if !r.Created.IsZero() {
+				created = r.Created.Local().Format("Jan 02 15:04")
+				if r.CreatedApprox {
+					created = "~" + created
+				}
+			}
+			cells := []string{clip(r.Name, max(12, w/4)), r.State, created}
+			if w >= 95 {
+				cells = append(cells, fmt.Sprint(r.Attempts), m.Data.RunExcerpts[r.Name])
+			}
+			return cells
 		}, "No public tests yet. Press n to send in a user.")
 	case m.Screen == 6:
-		body = m.list(w, contentH, "Professions", "Enter hire", []string{"Profession", "Title", "Sector"}, func(i int) []string {
-			p := m.Data.Positions[i]
-			return []string{p.Name, p.Title, p.Sector}
+		body = m.list(w, contentH, "Professions", "S sort: "+m.Data.View.Config.UISort["catalogue_sort"], []string{"Profession", "Title", "Sector", "State"}, func(i int) []string {
+			p := m.catalogue()[i]
+			state := "active"
+			if p.Deleted {
+				state = "deleted"
+			}
+			return []string{p.Name, p.Title, p.Sector, state}
 		}, "No professions found.")
 	}
 	for len(body) < contentH {
@@ -106,7 +125,7 @@ func (m *model) render(w, h int) []row {
 	return fitRows(rows, w, h)
 }
 func (m *model) header(w int) row {
-	left := []span{{" vcomp", accent}, {" · ", dim}, {m.rootLabel(), bold}}
+	left := []span{{" " + m.rootLabel(), bold}}
 	status := m.status()
 	style := dim
 	switch status {
@@ -178,10 +197,14 @@ func (m *model) footer(w, h int) row {
 			return hints(w, size, "Enter", "done", "Ctrl-U", "clear", "Ctrl-S", "save", "Esc", "stop editing")
 		}
 		return hints(w, size, "Tab / ↑↓", "field", "Ctrl-S", "save", "Esc", "cancel")
+	case m.Detail == "profession-draft":
+		return hints(w, size, "e", "edit draft", "s", "save", "↑↓", "scroll", "Esc", "back")
+	case m.Detail == "profession":
+		return hints(w, size, "e", "edit", "g", "generate", "h", "hire", "d", "delete", "u", "restore", "Esc", "back")
 	case m.Detail == "agent" && m.Sub == 0:
-		return hints(w, size, "←→", "request", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "[ / ]", "request")
+		return hints(w, size, "m", "message", "←→", "request", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "[ / ]", "request")
 	case m.Detail == "agent":
-		return hints(w, size, "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "a", "watch", "t", "steer", "p", "settings", "b", "replace", "e", "edit")
+		return hints(w, size, "m", "message", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "a", "watch", "t", "steer", "p", "settings", "b", "replace", "e", "edit")
 	case m.Detail != "":
 		return hints(w, size, "↑↓", "scroll", "Esc", "back", "q", "leave")
 	}
@@ -190,19 +213,19 @@ func (m *model) footer(w, h int) row {
 		if len(m.Data.View.Agents) == 0 {
 			return hints(w, size, "c", "set up", "o", "open", "?", "help", "q", "leave")
 		}
-		return hints(w, size, "Enter", "open role", "s", "start", "x", "stop", "h", "hire", "t", "steer", "a", "watch", "?", "help", "q", "leave")
+		return hints(w, size, "Enter", "open role", "S", "sort", "m", "message", "s", "start", "x", "stop", "h", "hire", "t", "steer", "a", "watch", "?", "help", "q", "leave")
 	case 1:
-		return hints(w, size, "Enter", "open test", "n", "new test", "?", "help", "q", "leave")
+		return hints(w, size, "Enter", "open test", "S", "sort", "n", "new test", "?", "help", "q", "leave")
 	case 2:
 		return hints(w, size, "Enter", "diff", "↑↓", "scroll", "?", "help", "q", "leave")
 	case 3:
-		return hints(w, size, "Enter", "edit settings", "e", "edit file", "?", "help", "q", "leave")
+		return hints(w, size, "Enter", "edit settings", "g", "role generator", "e", "edit file", "?", "help", "q", "leave")
 	case 4:
 		return hints(w, size, "e", "edit goal file", "↑↓", "scroll", "?", "help", "q", "leave")
 	case 5:
 		return hints(w, size, "↑↓", "scroll", "f", "follow", "?", "help", "q", "leave")
 	}
-	return hints(w, size, "Enter", "hire", "?", "help", "q", "leave")
+	return hints(w, size, "Enter", "inspect", "S", "sort", "n", "new", "h", "hire", "e", "edit", "d", "delete", "z", "deleted", "p", "generator", "?", "help", "q", "leave")
 }
 func (m *model) renderConfirm(w int) []row {
 	body := []row{{Text: " Confirm action", Style: warning}, {}}
@@ -218,7 +241,7 @@ func (m *model) renderDocument(w, h int) []row {
 	}
 	body := []row{}
 	if m.Detail == "agent" {
-		spans := []span{{" " + m.agent(), accent}, {"  ", ""}}
+		spans := []span{{" " + strings.ToUpper(m.agent()) + " ", inverse + bold}, {"  ", ""}}
 		for i, s := range []string{"Inbox", "Notes", "Terminal", "Goals", "Role"} {
 			if i == m.Sub {
 				spans = append(spans, span{" " + s + " ", selected}, span{" ", ""})
@@ -228,7 +251,7 @@ func (m *model) renderDocument(w, h int) []row {
 		}
 		tabs := styled(spans...)
 		if width(tabs.Text) > w {
-			tabs = styled(span{" " + m.agent(), accent}, span{fmt.Sprintf(" · %d/5 ", m.Sub+1), dim}, span{[]string{"Inbox", "Notes", "Terminal", "Goals", "Role"}[m.Sub], selected})
+			tabs = styled(span{" " + strings.ToUpper(m.agent()) + " ", inverse + bold}, span{fmt.Sprintf(" · %d/5 ", m.Sub+1), dim}, span{[]string{"Inbox", "Notes", "Terminal", "Goals", "Role"}[m.Sub], selected})
 		}
 		body = append(body, tabs)
 		if m.Sub == 0 {
@@ -314,7 +337,7 @@ func stateStyle(state string) string {
 		return warning
 	case "error", "broken", "abandoned":
 		return bad
-	case "impressions":
+	case "done":
 		return accent
 	}
 	return dim
@@ -328,7 +351,7 @@ func (m *model) dashboard(w, h int) []row {
 		inbox += a.Inbox
 	}
 	for _, r := range m.Data.View.Runs {
-		if r.State == "impressions" {
+		if r.State == "done" {
 			done++
 		}
 	}

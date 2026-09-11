@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -29,18 +30,20 @@ type refreshResult struct {
 }
 
 type result struct {
-	Text string
-	Err  error
-	Kind string
+	Draft *professionDraft
+	Text  string
+	Err   error
+	Kind  string
 }
 type app struct {
-	m         model
-	t         *terminal
-	child     *exec.Cmd
-	childDone chan result
-	jobs      chan result
-	refresh   chan refreshResult
-	reading   bool
+	generationCancel context.CancelFunc
+	m                model
+	t                *terminal
+	child            *exec.Cmd
+	childDone        chan result
+	jobs             chan result
+	refresh          chan refreshResult
+	reading          bool
 }
 
 func Run(root string, opt Options) error {
@@ -53,6 +56,9 @@ func Run(root string, opt Options) error {
 	}
 	a := &app{m: model{Root: root, Screen: opt.Screen, Follow: opt.Screen == 5, Message: "Loading company..."}, t: t, jobs: make(chan result, 1), refresh: make(chan refreshResult, 1)}
 	defer func() {
+		if a.generationCancel != nil {
+			a.generationCancel()
+		}
 		a.closeChild()
 		if a.t != nil {
 			a.t.Close()
@@ -145,12 +151,28 @@ func Run(root string, opt Options) error {
 			}
 		case r := <-a.jobs:
 			a.m.Busy = false
+			if r.Draft != nil {
+				a.m.Draft = r.Draft
+				a.m.Form = nil
+				a.m.Detail = "profession-draft"
+				a.m.Scroll = 0
+				a.m.Message = r.Text
+				if r.Err != nil {
+					a.m.Message = r.Err.Error()
+				}
+				a.reload()
+				continue
+			}
 			if r.Err != nil {
 				a.m.Message = r.Err.Error()
 			} else {
 				a.m.Form = nil
 				a.m.Message = r.Text
 				switch r.Kind {
+				case "profession-save", "profession-delete", "profession-restore":
+					a.m.switchScreen(6)
+					a.m.Draft = nil
+					a.m.Message = r.Text
 				case "save-settings", "hire", "replace", "steer":
 					a.m.switchScreen(0)
 					a.m.Message = r.Text
@@ -213,6 +235,12 @@ func (a *app) work(kind string, fn func() (string, error)) {
 }
 func (a *app) dispatch(act action) (bool, error) {
 	root := a.m.Root
+	if act.Kind == "sort-form" || act.Kind == "sort-save" {
+		return false, a.sortAction(act)
+	}
+	if strings.HasPrefix(act.Kind, "profession-") || strings.HasPrefix(act.Kind, "generation-") {
+		return false, a.professionAction(act)
+	}
 	switch act.Kind {
 	case "quit":
 		return true, nil
@@ -267,8 +295,15 @@ func (a *app) dispatch(act action) (bool, error) {
 		})
 	case "hire-form":
 		position := "developer"
-		if a.m.Screen == 6 && a.m.Selected < len(a.m.Data.Positions) {
-			position = a.m.Data.Positions[a.m.Selected].Name
+		if a.m.Screen == 6 {
+			p := a.m.profession()
+			if p.Name == "" {
+				return false, fmt.Errorf("select a profession")
+			}
+			if p.Deleted {
+				return false, fmt.Errorf("restore this profession before hiring")
+			}
+			position = p.Name
 		}
 		name := ""
 		if len(act.Values) > 0 {
@@ -281,6 +316,23 @@ func (a *app) dispatch(act action) (bool, error) {
 			return false, fmt.Errorf("the CEO's identity is user-owned; edit its template or instructions in Settings")
 		}
 		a.m.Form = newForm("replace", "Replace "+name, []field{{Label: "Employee", Value: name, Kind: kindStatic}, {Label: "New backstory", Empty: "optional; drawn from the pool"}}, nil)
+	case "message-form":
+		name := act.Values[0]
+		if name == "" {
+			name = a.m.agent()
+		}
+		if name == "" {
+			return false, fmt.Errorf("select an employee")
+		}
+		a.m.Form = newForm("message", "Send message FROM USER to "+name, []field{{Label: "Recipient", Value: name, Kind: kindStatic}, {Label: "Subject"}, {Label: "Message"}, {Label: "Or read from file", Kind: kindFile, Base: root, Empty: "none"}}, nil)
+	case "message":
+		a.work(act.Kind, func() (string, error) {
+			args := []string{"message", act.Values[0], "-subject", act.Values[1], "-text", act.Values[2]}
+			if act.Values[3] != "" {
+				args = append(args, "-file", absolute(act.Values[3], root))
+			}
+			return command(root, args...)
+		})
 	case "steer-form":
 		name := act.Values[0]
 		if name == "ceo" {

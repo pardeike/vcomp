@@ -95,10 +95,11 @@ the role's name - so `developer-1` and `developer-2` share a template and get
 different people.
 
 Every profession is a `positions/<name>.md` template with a title, a backstory
-sector, a remit and a bias. All 29 professions, including the CEO, render through
+sector, a remit and a bias. All professions, including the CEO, render through
 `role_position.md` with `standing.md`. `vcomp roles` lists one catalogue. There
 is no generic fallback and no freeform role document path. Adding a profession
-means the user adds a template using the same override directories.
+can be done through the Role catalogue or the `profession` CLI, using the same
+override directories.
 
 The default roster is `ceo, project-manager, developer, designer, art-director,
 tester`. Names ending in `-N` share a profession, so a company may still hire
@@ -137,3 +138,50 @@ catalogue choice. Older flag-only goals are recovered before reset.
 `standing.md` supplies the shared internal monologue in `notes.md`, concrete
 outward communication, useful work when the inbox is empty, and personal goals
 in `goals.md`. The engine has no opinion about that behavior.
+
+## Profession authoring model
+
+The catalogue generator creates only the shared professional definition.
+Backstories are still selected per employee. `Sector:` chooses a backstory pool,
+not a department or a restriction on duties. Writer covers substantive prose
+and narrative; Copywriter covers persuasive copy and functional short text.
+
+The defaults are Claude CLI with `claude-opus-5`, high effort, and a five-minute
+timeout. Override these top-level keys in either settings layer:
+
+```ini
+role_generation_model = claude-opus-5
+role_generation_effort = high
+role_generation_timeout = 5m
+role_generation_command = claude --print --output-format text --tools= --setting-sources= --no-session-persistence --model {{model}} --effort {{effort}}
+```
+
+The command receives the authoring prompt on stdin and must return a Markdown
+definition on stdout. It runs in a temporary directory. The default command has
+no tools or persistent session and uses the existing Claude login. Generation
+returns an editable draft; saving is a separate operation. Invalid drafts remain
+available for correction. Model and command changes here do not change employee
+or public tester models.
+
+`role_generation.md` is the editable authoring prompt. It includes the requested
+brief, available sectors, the developer/designer/tester definitions as examples,
+and the separately appended standing rules. `role_blank.md` supplies manual
+drafts. Both follow the normal template override order.
+
+The authoring prompt is reconstructed from the original company design requests
+and role examples, not claimed to be a recovered standalone prompt. See
+[role authoring provenance](role-authoring.md).
+
+Deleting a profession writes a `.deleted` marker beside a retained definition.
+This prevents a built-in definition from reappearing and keeps existing employees
+renderable. Restore removes the marker. A higher-priority definition overrides a
+lower-priority deletion. Editing a shared definition affects its existing employees;
+the engine's normal role-change handling replaces their conversations.
+
+## Table sort defaults
+
+`dashboard_sort = name`, `catalogue_sort = name` and
+`public_tests_sort = -created` set the initial display order. A leading minus
+means descending. The TUI's `S` form saves these in company settings. Global
+settings can supply defaults for new companies. These values affect only the
+view, never agent scheduling or inbox handling.

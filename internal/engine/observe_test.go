@@ -80,3 +80,25 @@ func TestObserveReadsTurnsFromOriginalAgentTerminal(t *testing.T) {
 		t.Fatalf("missing turn telemetry: %+v", view.Agents)
 	}
 }
+
+func TestPublicRunCreationAndCompletionObservation(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	dir := filepath.Join(root, "public", "run-0001")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	view := Observe(root)
+	if len(view.Runs) != 1 || view.Runs[0].Created.IsZero() || view.Runs[0].State != "waiting" {
+		t.Fatal(view.Runs)
+	}
+	e.st.Runs["run-0001"] = &runState{Attempts: 1}
+	e.saveState()
+	if got := Observe(root).Runs[0].State; got != "retry pending" {
+		t.Fatal(got)
+	}
+	os.WriteFile(filepath.Join(dir, "impressions.md"), []byte("Could not finish."), 0644)
+	view = Observe(root)
+	if view.Runs[0].State != "done" || view.Runs[0].Attempts != 1 {
+		t.Fatal(view.Runs)
+	}
+}
