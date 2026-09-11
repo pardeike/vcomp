@@ -99,12 +99,12 @@ func Option(session, key string) string {
 // Pane is the original agent pane, even if an attached user changes windows
 // or splits the session. A missing original pane counts as exited.
 type Pane struct {
-	Exists, Dead bool
-	ID, Status   string
+	Exists, Dead    bool
+	ID, Status, TTY string
 }
 
 func Inspect(session string) (Pane, error) {
-	out, err := run("list-panes", "-s", "-t", "="+session, "-F", "#{pane_id} #{pane_dead} #{pane_dead_status}")
+	out, err := run("list-panes", "-s", "-t", "="+session, "-F", "#{pane_id}|#{pane_dead}|#{pane_tty}|#{pane_dead_status}")
 	if err != nil {
 		if !Exists(session) {
 			return Pane{}, nil
@@ -113,7 +113,7 @@ func Inspect(session string) (Pane, error) {
 	}
 	wanted := Option(session, "@vcomp-pane")
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		fields := strings.Fields(line)
+		fields := strings.Split(line, "|")
 		if len(fields) < 2 {
 			continue
 		}
@@ -122,7 +122,10 @@ func Inspect(session string) (Pane, error) {
 		}
 		p := Pane{Exists: true, ID: fields[0], Dead: fields[1] == "1"}
 		if len(fields) > 2 {
-			p.Status = fields[2]
+			p.TTY = fields[2]
+		}
+		if len(fields) > 3 {
+			p.Status = fields[3]
 		}
 		return p, nil
 	}

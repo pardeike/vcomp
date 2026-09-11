@@ -13,6 +13,8 @@ type data struct {
 	View                                       engine.Observation
 	Product, Diff, Goal, Result, Log, Settings string
 	ProductSummary                             string
+	RecentCommits                              []string
+	InboxTopics                                map[string][]string
 	AgentDocs                                  map[string][]string
 	RunDocs                                    map[string]string
 	Positions                                  []bootstrap.Position

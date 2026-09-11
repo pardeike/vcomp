@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"vcomp/internal/config"
 	"vcomp/internal/engine"
@@ -531,5 +532,36 @@ func TestEditingCursorFollowsTheField(t *testing.T) {
 	m.render(80, 24)
 	if m.CursorX != -1 {
 		t.Fatal("cursor shown while not editing")
+	}
+}
+
+func TestDashboardTurnsTopicsAndRecentCommits(t *testing.T) {
+	m := fixture()
+	m.Data.View.Agents[0].Turns = engine.TurnStats{Known: true, Completed: 8,
+		Started: time.Date(2026, 9, 11, 10, 24, 3, 0, time.Local), Average: 138 * time.Second}
+	m.Data.ProductSummary = "abc1234 Add fishing controls"
+	m.Data.RecentCommits = []string{m.Data.ProductSummary, "def5678 Draw lake scene", "123abcd Add app window"}
+	m.Data.InboxTopics = map[string][]string{"developer-00": {"add-casting-animation", "fix-line-tension"}}
+	for _, size := range [][2]int{{160, 40}, {140, 40}, {120, 30}, {80, 30}, {40, 12}} {
+		rows := m.render(size[0], size[1])
+		text := draw(rows, false)
+		if size[0] >= 140 {
+			for _, want := range []string{"Turns", "Started", "Avg turn", "10:24:03", "2m18s", "add-casting-animation", "fix-line-tension", "Draw lake scene"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("size %v missing %q", size, want)
+				}
+			}
+			if strings.Count(text, "Started") != 1 {
+				t.Fatal("repeated timing labels in rows")
+			}
+		}
+		if size[0] <= 60 && strings.Contains(text, "Avg turn") {
+			t.Fatal("timing columns crowded narrow layout")
+		}
+		for _, r := range rows {
+			if width(r.Text) > size[0] {
+				t.Fatalf("overflow at %v: %q", size, r.Text)
+			}
+		}
 	}
 }

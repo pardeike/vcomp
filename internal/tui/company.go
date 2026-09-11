@@ -60,7 +60,7 @@ func gitText(root string, args ...string) string {
 	return strings.TrimSpace(string(b))
 }
 func loadData(root string) data {
-	d := data{View: engine.Observe(root), AgentDocs: map[string][]string{}, RunDocs: map[string]string{}, Positions: bootstrap.Load(root).Positions()}
+	d := data{InboxTopics: map[string][]string{}, View: engine.Observe(root), AgentDocs: map[string][]string{}, RunDocs: map[string]string{}, Positions: bootstrap.Load(root).Positions()}
 	d.Goal = readDocument(filepath.Join(root, space.SpacesDir, "ceo", "goal.md"), false)
 	if d.View.Config.ResultFile != "" {
 		d.Result = readDocument(filepath.Join(root, d.View.Config.ResultFile), false)
@@ -75,7 +75,8 @@ func loadData(root string) data {
 		if strings.HasPrefix(commits, "fatal:") {
 			commits = "No commits yet."
 		}
-		d.ProductSummary = strings.Split(commits, "\n")[0]
+		d.RecentCommits = strings.Split(commits, "\n")
+		d.ProductSummary = d.RecentCommits[0]
 		changes := max(0, len(strings.Split(status, "\n"))-1)
 		if changes > 0 {
 			d.ProductSummary = fmt.Sprintf("%d changed paths | %s", changes, d.ProductSummary)
@@ -96,6 +97,7 @@ func loadData(root string) data {
 			if !entry.IsDir() {
 				continue
 			}
+			d.InboxTopics[a.Name] = append(d.InboxTopics[a.Name], entry.Name())
 			fmt.Fprintf(&inbox, "# %s\n\n%s\n\n", entry.Name(), readDocument(filepath.Join(dir, "inbox", entry.Name(), "message.md"), false))
 		}
 		if inbox.Len() == 0 {

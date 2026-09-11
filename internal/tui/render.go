@@ -318,24 +318,40 @@ func (m *model) dashboard(w, h int) []row {
 		return []row{{Text: " No company in this directory yet.", Style: accent}, {}, styled(span{" c", bold}, span{" set up a company", dim}), styled(span{" o", bold}, span{" open another directory", dim}), {}, {Text: " Setup only writes files when you save.", Style: dim}}
 	}
 	rows := []row{styled(span{fmt.Sprintf(" %d agents", len(m.Data.View.Agents)), accent}, span{fmt.Sprintf(" · %d live · %d inbox · tests %d/%d", live, inbox, done, len(m.Data.View.Runs)), dim}), {Text: " Product: " + m.Data.ProductSummary, Style: dim}}
+	if h >= 24 {
+		for i := 1; i < min(3, len(m.Data.RecentCommits)); i++ {
+			rows = append(rows, row{Text: "          " + m.Data.RecentCommits[i], Style: dim})
+		}
+	}
 	wide := w >= 120
 	listW := w
 	if wide {
 		listW = w * 55 / 100
 	}
-	listH := h - 3
+	listH := h - len(rows) - 1
 	if !wide && h >= 17 {
-		listH = max(5, h*2/3-3)
+		listH = max(5, h*2/3-len(rows)-1)
 	}
 	nameW := 8
 	for _, a := range m.Data.View.Agents {
 		nameW = min(24, max(nameW, width(a.Name)))
 	}
+	// Keep a useful output preview on wide screens while giving timing columns
+	// space when both panels fit. Narrow screens retain the existing layout.
+	turnWidth := 3 + nameW + 2 + 9 + 2 + 5 + 16 + 28
+	if wide && w >= turnWidth+1+3+40 {
+		listW = max(listW, turnWidth+1)
+	}
+	showTurns := listW >= turnWidth+1
+	showLastLine := listW >= 85 && !showTurns
 	header := "   " + pad("Agent", nameW) + "  " + pad("State", 9) + "  Inbox"
 	if listW >= 70 {
 		header += "  " + pad("CLI", 8) + "  Idle"
 	}
-	if listW >= 85 {
+	if showTurns {
+		header += fmt.Sprintf("  %5s  %-8s  %9s", "Turns", "Started", "Avg turn")
+	}
+	if showLastLine {
 		header += "  Last line"
 	}
 	rows = append(rows, row{Text: header, Style: dim})
@@ -346,7 +362,20 @@ func (m *model) dashboard(w, h int) []row {
 		if listW >= 70 {
 			cells = append(cells, span{fmt.Sprintf("  %s  %4d", pad(a.Harness, 8), a.Idle), ""})
 		}
-		if listW >= 85 {
+		if showTurns {
+			count, started, average := "—", "—", "—"
+			if a.Turns.Known {
+				count = fmt.Sprint(a.Turns.Completed)
+				if !a.Turns.Started.IsZero() {
+					started = a.Turns.Started.Local().Format("15:04:05")
+				}
+				if a.Turns.Completed > 0 {
+					average = a.Turns.Average.Round(time.Second).String()
+				}
+			}
+			cells = append(cells, span{fmt.Sprintf("  %5s  %-8s  %9s", clip(count, 5), started, clip(average, 9)), dim})
+		}
+		if showLastLine {
 			lines := strings.Split(strings.TrimSpace(clean(a.Output)), "\n")
 			cells = append(cells, span{"  " + strings.TrimSpace(lines[len(lines)-1]), dim})
 		}
@@ -373,6 +402,16 @@ func (m *model) dashboard(w, h int) []row {
 	}
 	if a.Error != "" {
 		preview = append(preview, row{Text: "Error: " + a.Error, Style: bad})
+	}
+	topics := m.Data.InboxTopics[a.Name]
+	if len(topics) > 0 {
+		preview = append(preview, row{Text: "Inbox requests", Style: accent})
+		for _, topic := range topics[:min(3, len(topics))] {
+			preview = append(preview, row{Text: "  " + topic})
+		}
+		if len(topics) > 3 {
+			preview = append(preview, row{Text: fmt.Sprintf("  +%d more · Enter → inbox", len(topics)-3), Style: dim})
+		}
 	}
 	output := strings.TrimSpace(clean(a.Output))
 	if output == "" {
@@ -413,7 +452,10 @@ func (m *model) dashboard(w, h int) []row {
 			rows[i] = styled(spans...)
 		}
 	} else if h-len(rows) >= 4 {
-		rows = append(rows, rule(w), preview[0])
+		rows = append(rows, rule(w))
+		for _, r := range preview[:min(len(preview), h-len(rows)-1)] {
+			rows = append(rows, r)
+		}
 		lines := strings.Split(output, "\n")
 		n := h - len(rows)
 		if len(lines) > n {
@@ -422,8 +464,6 @@ func (m *model) dashboard(w, h int) []row {
 		for _, s := range lines {
 			rows = append(rows, row{Text: " " + s, Style: dim})
 		}
-		rows[len(rows)-len(lines)-1].Spans = append([]span{{" ", ""}}, rows[len(rows)-len(lines)-1].Spans...)
-		rows[len(rows)-len(lines)-1].Text = " " + rows[len(rows)-len(lines)-1].Text
 	}
 	return rows
 }

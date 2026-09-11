@@ -163,3 +163,17 @@ conversation after replacement. OMP's check used the preset's setup-skip option.
 
 The endpoint returned scripted responses. This verifies CLI integration, not
 the tool-calling reliability or performance of an actual local model.
+
+## OMP turn timing
+
+The OMP preset sets `turn_history = ~/.omp/agent/terminal-sessions`. The observer
+uses the original tmux pane's terminal name to find OMP's active-session
+breadcrumb, validates its working directory against the employee space, and
+reads that JSONL conversation. It caches unchanged transcripts between display
+refreshes. It does not send commands or install extensions in OMP.
+
+Override `turn_history` in `[harness omp]` if OMP uses another agent directory,
+or leave it empty to disable this measurement. The directory must contain OMP
+terminal breadcrumbs and reference OMP-format JSONL sessions. Other shipped
+harnesses currently leave it unset and display unavailable timing. See
+[dashboard progress](tui.md#dashboard-progress) for the counting rules.

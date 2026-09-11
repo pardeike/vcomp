@@ -68,6 +68,8 @@ type Harness struct {
 	// Handshake is tmux key names sent once after the session comes up, before
 	// the first prompt - for whatever a harness asks before it will talk.
 	Handshake []string
+	// TurnHistory is an OMP terminal-sessions directory, empty when unsupported.
+	TurnHistory string
 }
 
 // Role holds per-person overrides. Zero fields fall back to the defaults.
@@ -265,6 +267,8 @@ func (c *Config) set(kind, name, key, value string) error {
 			h.Models = list(value)
 		case "efforts":
 			h.Efforts = list(value)
+		case "turn_history":
+			h.TurnHistory = value
 		case "handshake":
 			h.Handshake = strings.Fields(value)
 		default:

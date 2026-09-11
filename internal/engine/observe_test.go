@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+	"vcomp/internal/tmux"
 
 	"vcomp/internal/config"
 )
@@ -49,5 +52,31 @@ func TestObservationDistinguishesStaleLockAndReportsTelemetry(t *testing.T) {
 	v = Observe(root)
 	if v.Agents[0].State == "broken" {
 		t.Fatal("stale failure applied to unsupervised session")
+	}
+}
+
+func TestObserveReadsTurnsFromOriginalAgentTerminal(t *testing.T) {
+	root, _, e := company(t, "ceo", "")
+	history := t.TempDir()
+	if err := config.UpdateLocal(root, []config.Override{{Section: "harness fake", Key: "turn_history", Value: history}}); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+	pane, err := tmux.Inspect(e.Session("ceo"))
+	if err != nil || pane.TTY == "" {
+		t.Fatalf("missing terminal: %+v %v", pane, err)
+	}
+	cwd := filepath.Join(root, "spaces", "ceo")
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	content := fmt.Sprintf("{\"type\":\"session\",\"cwd\":%q}\n", cwd) + turnEntry("user", "", 0) + turnEntry("assistant", "stop", 10)
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(history, filepath.Base(pane.TTY)), []byte(cwd+"\n"+path+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	view := Observe(root)
+	if len(view.Agents) != 1 || view.Agents[0].Turns.Completed != 1 || view.Agents[0].Turns.Average != 10*time.Second {
+		t.Fatalf("missing turn telemetry: %+v", view.Agents)
 	}
 }

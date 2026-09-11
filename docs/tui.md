@@ -123,3 +123,26 @@ Manual Terminal checks cover the displayed dashboard and tmux attach/detach.
 The fixtures use local shell agents and do not spend model API calls. A separate
 pi check against the already downloaded Ollama `qwen3.5:9b` model verified read,
 edit, and shell tools. That small check is not evidence for a whole company run.
+
+## Dashboard progress
+
+When the role table has enough width, it adds `Turns`, `Started`, and `Avg turn`
+columns. `Turns` counts completed prompt-to-final-response assignments in the
+current OMP conversation. Thinking, tool calls, automatic model retries, and
+server queue time belong to that assignment. `Started` is the active turn's
+local start time, with no repeated label in individual rows. The average uses
+completed turns only; unfinished, aborted, and unrecovered error turns are
+excluded. A model response stopped at its output limit counts as finished, not
+necessarily successful.
+
+Timing comes from OMP's recorded session history, not animated terminal output
+or the engine's idle counter. It becomes visible when OMP persists its records.
+Missing or unsupported history shows `—`, not a fabricated zero. Resuming the
+same conversation retains its counts; a fresh conversation starts new counts.
+The measurements are display-only and never influence supervision or prompts.
+
+The selected employee's preview lists up to three inbox directory names, with
+a count of additional requests. The full inbox remains available through the
+employee detail screen. Taller dashboards show up to three recent product
+commit messages above the role table; the Product screen retains the longer
+history. These additions shrink or disappear when the terminal lacks space.

@@ -25,6 +25,7 @@ type AgentView struct {
 	Name, Session, State, Harness, Model, Output, Error string
 	Inbox, Idle                                         int
 	Changed                                             time.Time
+	Turns                                               TurnStats
 }
 
 type RunView struct{ Name, State, Session string }
@@ -127,6 +128,12 @@ func Observe(root string) Observation {
 				}
 				if a.State == "live" && (s.NeedPrompt || s.NeedShake) {
 					a.State = "starting"
+				}
+			}
+			if err == nil && pane.Exists && pane.TTY != "" {
+				a.Turns = readTurnStats(v.Config.Harnesses[a.Harness].TurnHistory, pane.TTY, r.Dir)
+				if pane.Dead {
+					a.Turns.Started = time.Time{}
 				}
 			}
 		}
