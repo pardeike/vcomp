@@ -38,6 +38,14 @@ Each harness section may also list `models` and `efforts`: comma-separated
 suggestions the terminal interface offers in its choosers. They restrict
 nothing; any value can still be typed.
 
+The default employee nudge reaffirms `role.md` and `CONVENTIONS.md`, including
+the role's responsibilities and limits. It leaves focus and priorities to the
+role and asks it to re-read instructions only when unclear or missing from
+context. Public tester nudges refer to their own `role.md`, including completion
+instructions. These reminders do not replace the full documents or guarantee
+model compliance. Existing global or per-role prompt overrides still take
+precedence over shipped defaults.
+
 For the shipped CLI presets and local endpoint examples, see
 [CLI harnesses and local models](harnesses.md).
 
