@@ -13,6 +13,9 @@ func terminalActivity(a engine.AgentView, mode string) string {
 		mode = "brief"
 	}
 	header := "Terminal · " + mode + " · read-only · v changes verbosity\n"
+	if a.DirectPending > 0 {
+		header += fmt.Sprintf("Direct steering: %d queued prompts waiting for this conversation\n", a.DirectPending)
+	}
 	if a.Error != "" {
 		header += "Error: " + a.Error + "\n"
 	}

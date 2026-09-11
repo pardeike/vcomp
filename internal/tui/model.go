@@ -347,6 +347,14 @@ func (m *model) key(k key) *action {
 		if m.Screen == 0 && m.agent() != "" {
 			return &action{Kind: "message-form", Values: []string{m.agent()}}
 		}
+	case "i":
+		if m.Screen == 0 && m.agent() != "" {
+			return &action{Kind: "direct-steer-form", Values: []string{m.agent()}}
+		}
+	case "B":
+		if m.Screen == 0 && m.Detail == "" {
+			return &action{Kind: "broadcast-form"}
+		}
 	case "t":
 		if m.Screen == 0 && m.agent() != "" {
 			return &action{Kind: "steer-form", Values: []string{m.agent()}}
@@ -511,6 +519,8 @@ SELECTED EMPLOYEE
      Detach with Ctrl-B then d
      Inside tmux: Ctrl-B then L returns to the dashboard
  m   Send an inbox message FROM USER
+ i   Direct steer: queued or immediate prompt in the selected conversation
+ B   Broadcast a queued or immediate prompt to all running employees (dashboard)
  t   Edit CEO steering for this employee
  b   Replace its backstory, retaining profession and steering
  p   Set its harness, model, effort, and nudge pacing

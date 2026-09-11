@@ -121,3 +121,26 @@ vcomp message ceo -root /tmp/vgame -subject "Graphic designer joined late" -text
 Use `-file FILE` for a multiline message. On an interactive terminal,
 `vcomp message ceo` opens the message form. The request is marked FROM USER and
 URGENT in its folder name, but receives ordinary inbox handling.
+
+## Direct steering
+
+Send a prompt to a running employee's existing conversation, or broadcast it:
+
+```sh
+vcomp direct-steer ceo -mode queued -text "Please reconsider this decision."
+vcomp direct-steer ceo -mode immediate -text "Re-read your role description before continuing."
+vcomp direct-steer -all -mode immediate -text "Re-read the updated company conventions."
+vcomp direct-steer -all -file announcement.txt
+```
+
+`queued` is the default. Broadcast targets the currently running employees,
+including the CEO, and reports individual outcomes; it does not include public
+testers or future hires. Prompts are labelled `FROM USER` and multiline text is
+flattened for terminal submission. The command requires a running supervisor
+that supports direct steering. After upgrading an older supervisor, restart
+vcomp supervision while retaining the employee tmux sessions.
+
+Queued prompts are saved with employee state and survive supervisor restarts.
+Replacing a role discards its old conversation's pending prompts. Deleting or
+resetting the company also discards them. A crash during terminal submission
+can leave delivery uncertain; inspect the conversation before retrying.

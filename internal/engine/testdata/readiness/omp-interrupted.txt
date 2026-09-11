@@ -1,0 +1,31 @@
+
+╭─── omp v18.1.17 ─────────────────────────────────────────────────────────────────────────────────╮
+│                          │ Tips                                                                  │
+│      Welcome back!       │ # for prompt actions                                                  │
+│                          │ / for commands                                                        │
+│       ████████████       │ ! to run bash                                                         │
+│          ██  ██          │ $ to run python                                                       │
+│          ██  ██          │ ───────────────────────────────────────────────────────────────────── │
+│          ▒▒  ██          │ LSP Servers                                                           │
+│              ██          │ No LSP servers                                                        │
+│                          │                                                                       │
+│          probe           │                                                                       │
+│          local           │                                                                       │
+│                          │ ───────────────────────────────────────────────────────────────────── │
+│                          │ Recent sessions                                                       │
+│                          │ No recent sessions                                                    │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+╰──────────────────────────┴───────────────────────────────────────────────────────────────────────╯
+ Tip: Pair up live: `/collab` shares your session through an end-to-end encrypted relay link — a
+      teammate runs `/join <link>` to watch tool calls stream and prompt the agent from their own
+      omp
+
+
+ Reply with PROBE_A_SEED
+
+
+ π > ⬢ probe > 🗑 …p-harness-smoke-mnu2bel2/omp/employee-a ▶──────────────15%──────────────────────────────────────────────────────╎──────────┃─────────────128K─
+╰─

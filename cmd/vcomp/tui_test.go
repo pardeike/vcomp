@@ -198,6 +198,34 @@ func TestTUIWorkflowInRealTerminal(t *testing.T) {
 	})
 	keys("1", "s")
 	wait("supervisor", func() bool { return engine.Supervising(root) && tmux.Alive("tui-workflow-developer-2") })
+	wait("CEO conversation ready", func() bool {
+		return strings.Contains(tmux.Option("tui-workflow-ceo", "@vcomp-state"), `"needPrompt":false`)
+	})
+	keys("Home", "i")
+	wait("direct steer form", func() bool { return has("Direct steer to ceo") && has("Queued:") })
+	keys("Down", "Enter")
+	typeText("DIRECT_QUEUE_UI")
+	keys("C-s")
+	wait("direct steer accepted", func() bool { return has("ceo: queued") })
+	wait("queued prompt delivered", func() bool {
+		out, _ := tmux.Capture("tui-workflow-ceo")
+		return strings.Contains(out, "FROM USER: DIRECT_QUEUE_UI")
+	})
+	keys("B")
+	wait("broadcast form", func() bool { return has("Broadcast to all running employees") })
+	keys("Right", "Down", "Enter")
+	typeText("DIRECT_BROADCAST_UI")
+	keys("C-s")
+	wait("broadcast submitted", func() bool { return has("submitted to the existing conversation") })
+	for _, name := range []string{"ceo", "developer", "developer-2"} {
+		wait("broadcast to "+name, func() bool {
+			out, _ := tmux.Capture("tui-workflow-" + name)
+			return strings.Contains(out, "FROM USER: DIRECT_BROADCAST_UI")
+		})
+	}
+	if out, _ := tmux.Capture("tui-workflow-user-run-0001"); strings.Contains(out, "DIRECT_BROADCAST_UI") {
+		t.Fatal("broadcast leaked to public tester")
+	}
 	for _, size := range [][2]int{{40, 12}, {80, 24}, {140, 42}} {
 		exec.Command("tmux", "resize-window", "-t", "tui-view", "-x", fmt.Sprint(size[0]), "-y", fmt.Sprint(size[1])).Run()
 		expected := fmt.Sprintf("%dx%d", size[0], size[1])

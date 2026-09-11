@@ -24,7 +24,7 @@ func TestHarnessReadinessFromRealTerminalFrames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := mode == "idle" || mode == "done"
+		want := mode == "idle" || mode == "done" || mode == "interrupted"
 		if got := inputReady(cfg.Harnesses[name], string(frame)); got != want {
 			t.Errorf("%s readiness=%v, want %v", entry.Name(), got, want)
 		}

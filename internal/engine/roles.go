@@ -97,6 +97,10 @@ func (e *Engine) syncRole(r space.Role) {
 		e.hire(r, s)
 		return
 	}
+	if s.DirectError != "" {
+		s.LastErr = s.DirectError
+		return
+	}
 	if s.NeedShake {
 		if err := tmux.SendKeys(sess, e.cfg.Harnesses[s.Harness].Handshake); err != nil {
 			e.roleError(r.Name, s, err)
@@ -122,6 +126,21 @@ func (e *Engine) syncRole(r space.Role) {
 		s.LastErr = ""
 		s.NeedPrompt, s.Resumed = false, false
 		s.Fails, s.Idle, s.PaneHash = 0, 0, ""
+		return
+	}
+	if len(s.DirectPrompts) > 0 {
+		sent, err := e.submitDirect(s, s.DirectPrompts[0])
+		if err != nil {
+			s.DirectError = "queued direct steer submission failed; delivery uncertain; automatic prompts paused: " + err.Error()
+			s.LastErr = s.DirectError
+			e.log.Printf("%s: %s", r.Name, s.DirectError)
+			return
+		}
+		if sent {
+			s.DirectPrompts = s.DirectPrompts[1:]
+			s.Idle, s.PaneHash = 0, ""
+			e.log.Printf("%s: queued direct steer submitted (%d remaining)", r.Name, len(s.DirectPrompts))
+		}
 		return
 	}
 	out, err := tmux.Capture(sess)

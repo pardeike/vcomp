@@ -1,0 +1,45 @@
+
+ ▐▛███▛█   Claude Code v2.1.268
+▝▜██████▀  Fable 5.1 with high effort · Claude Max
+  ▝▝ ▝▝    /private/var/folders/s5/21qknfyd6hx49g8__bwbh4pr0000gn/T/vcomp-direct-frontier-ij4204qy/claude · /rc
+
+  Fable 5.1 writes better code and reports progress on long tasks. Switch anytime with /model.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                              ● high · /effort
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Run the shell command sleep 30. Then say SLEEP_FINISHED. Do not modify files.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

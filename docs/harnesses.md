@@ -205,3 +205,34 @@ trust/login dialogs may require interaction before readiness can be established.
 Readiness is checked again immediately before sending. A submitted ready-frame
 fingerprint is persisted to prevent duplicate submissions before the UI changes.
 Existing queued messages are not removed or rewritten by this change.
+
+## Direct steering controls
+
+Native queue semantics differ: [pi](https://github.com/earendil-works/pi/tree/main/packages/coding-agent#message-queue)
+separates steering from follow-up messages, and
+[OMP](https://github.com/can1357/oh-my-pi/blob/main/docs/rpc.md) exposes steering,
+follow-up and abort-and-prompt operations. vcomp holds queued direct prompts
+outside the harness and submits only at its recognized available input prompt,
+so queued delivery consistently waits for the current work to finish.
+
+Immediate direct steering uses each preset's `interrupt = Escape` and
+`interrupt_pattern` to recognize an active turn that can be interrupted. An
+available input prompt needs no interrupt. Escape is documented by
+[Claude Code](https://code.claude.com/docs/en/interactive-mode), pi, OMP and
+[OpenCode](https://opencode.ai/docs/keybinds/), and is displayed by the installed
+Codex interface. Custom bindings, Vim modes and extensions may change behaviour;
+override the preset keys and patterns to match. Unknown states are rejected.
+
+`direct_steer_timeout = 15s` bounds waiting for the input prompt after interruption;
+`direct_steer_poll = 200ms` controls checks during that wait. The supervisor
+serializes direct delivery and automatic prompts. A broadcast interrupts each
+eligible employee before waiting for any one to finish cancelling. Conversation
+history survives; an interrupted external tool can still have side effects.
+
+Claude can restore the cancelled prompt into its editor before generating its
+first response. Its preset also defines `interrupt_clear = C-u` and
+`interrupt_input_pattern` to clear that restored draft once the busy indicator
+has gone. This applies only after vcomp itself interrupted the turn. It does not
+clear a pre-existing draft in an otherwise idle session. Other native queued
+messages are not discarded. Live post-interrupt and restored-input frames are
+covered by the readiness fixtures.

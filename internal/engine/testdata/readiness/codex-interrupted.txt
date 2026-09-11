@@ -1,0 +1,24 @@
+╭─────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.154.0)                      │
+│                                                 │
+│ model:       gpt-6-astra low   /model to change │
+│ directory:   /private/var/folders/s5/…/codex    │
+│ permissions: YOLO mode                          │
+╰─────────────────────────────────────────────────╯
+
+  Tip: New Use /fast to enable our fastest inference with increased plan usage.
+
+⚠ 1 MCP startup issue · ctrl + t for details
+
+• You have 3 usage limit resets available. Run /usage to use one.
+
+
+› Run the shell command sleep 30. Then say SLEEP_FINISHED. Do not modify files.
+
+
+■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.
+
+
+› Ask Codex to do anything
+
+  gpt-6-astra low · Ready · Context 100% left

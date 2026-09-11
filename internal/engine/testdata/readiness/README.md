@@ -8,3 +8,9 @@ The same busy frame is deliberately usable repeatedly: a static screen must
 never be treated as proof of input readiness. Done frames prove the prompt
 becomes eligible again after work finishes. These are terminal observations,
 not agent-authored descriptions of state.
+
+Direct-steering checks on 2026-09-11 added post-interrupt frames for pi, OMP,
+OpenCode and Codex. Claude's `restored-input` frame contains the cancelled prompt
+returned to the editor: it is deliberately not ready for submission. Its
+`interrupted` frame follows Ctrl-U clearing that restored draft. pi/OMP/OpenCode
+used the delayed local fixture; Claude and Codex used a shell-sleep prompt.

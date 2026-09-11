@@ -114,3 +114,18 @@ Things that look arbitrary and are not, so nobody "fixes" them back:
 - **An empty placeholder removes its flag, not just its token.** Dropping only
   `{{model}}` would leave a dangling `--model` and the harness would refuse to
   start.
+
+## User control channel
+
+The supervising process owns a local Unix socket, accessible only to its OS
+user, for direct steering requests. The CLI and TUI submit requests there;
+only the supervisor event loop touches harness input. Direct interruption and
+submission therefore cannot interleave with automatic nudges. The socket name
+uses the canonical company path's hash so long company paths and symlink aliases
+work. It is created only while holding the existing supervisor lock.
+
+Queued direct prompts are kept in employee state and tmux recovery metadata,
+and are consumed before normal idle nudges. Immediate requests bypass this queue
+without discarding it. A failed immediate handoff holds automatic prompts until
+another direct request releases the hold. This control channel is for explicit
+user intervention; employee-to-employee communication remains filesystem based.

@@ -251,3 +251,29 @@ pauses a snapshot of the document, so incoming records cannot shift the text
 being read. `f` resumes live updates and scrolls to the newest output. The footer
 shows following or paused. Entering Terminal or changing verbosity resumes
 following. This also applies to the raw terminal view.
+
+## Direct steering and broadcasts
+
+Press `i` on the dashboard or inside a role to send a **Direct steer** into that
+employee's existing conversation, including the CEO's. Press `B` on the dashboard
+for **Broadcast** to all currently running employees. Public testers are excluded.
+Both forms accept prompt text or a file, and offer two delivery modes:
+
+- **Queued**, the default: keep the prompt in vcomp until the employee reaches
+  an available input prompt. It takes precedence over the next automatic nudge.
+- **Immediate**: interrupt the active turn, wait for an available input prompt,
+  then submit the instruction and let the same conversation continue. Claude's
+  restored cancelled prompt is cleared before submitting the replacement.
+
+The Terminal tab shows the number of pending direct prompts. Submission results
+appear after sending and in Activity, per employee for broadcasts. A submission
+means the terminal accepted the send operation, not proof that the model obeyed.
+Unknown UI states fail without typing blindly. If interruption succeeds but input
+never becomes available, automatic prompts for that employee stay paused; inspect
+its terminal and retry Direct steer once the input is available. Existing native
+harness queues or unsent editor text may need interactive intervention.
+
+This is separate from `m` inbox messages, `t` persistent role steering, and `a`
+interactive terminal intervention. Direct steering preserves the conversation
+and does not edit the role, backstory or inbox. Immediate delivery goes ahead of
+vcomp's queued prompts; earlier queued prompts remain pending.

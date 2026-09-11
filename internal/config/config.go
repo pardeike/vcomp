@@ -57,6 +57,10 @@ func LocalDir(root string) string { return filepath.Join(root, DirName) }
 // Harness is how to start a CLI agent, and how to start it again so that it
 // keeps the memory of its previous session.
 type Harness struct {
+	InterruptClear            []string
+	InterruptInputPattern     string
+	Interrupt                 []string
+	InterruptPattern          string
 	ReadyPattern, BusyPattern string
 	Start                     []string
 	Resume                    []string
@@ -92,17 +96,19 @@ type RoleGenerator struct {
 }
 
 type Config struct {
-	TerminalView     string
-	UISort           map[string]string
-	RoleGenerator    RoleGenerator
-	Tick             time.Duration
-	TUIRefresh       time.Duration
-	IdleTicks        int
-	IdleTicksEmpty   int
-	UserTimeout      time.Duration
-	UserMaxAttempts  int
-	MaxRestarts      int
-	LaunchRetryDelay time.Duration
+	DirectSteerTimeout time.Duration
+	DirectSteerPoll    time.Duration
+	TerminalView       string
+	UISort             map[string]string
+	RoleGenerator      RoleGenerator
+	Tick               time.Duration
+	TUIRefresh         time.Duration
+	IdleTicks          int
+	IdleTicksEmpty     int
+	UserTimeout        time.Duration
+	UserMaxAttempts    int
+	MaxRestarts        int
+	LaunchRetryDelay   time.Duration
 
 	SessionPrefix       string
 	CEOInstructionsFile string
@@ -277,7 +283,7 @@ func (c *Config) set(kind, name, key, value string) error {
 			h.Models = list(value)
 		case "efforts":
 			h.Efforts = list(value)
-		case "ready_pattern", "busy_pattern":
+		case "ready_pattern", "busy_pattern", "interrupt_pattern", "interrupt_input_pattern":
 			if value != "" {
 				if _, err := regexp.Compile(value); err != nil {
 					return fmt.Errorf("%s: %w", key, err)
@@ -285,9 +291,17 @@ func (c *Config) set(kind, name, key, value string) error {
 			}
 			if key == "ready_pattern" {
 				h.ReadyPattern = value
-			} else {
+			} else if key == "busy_pattern" {
 				h.BusyPattern = value
+			} else if key == "interrupt_pattern" {
+				h.InterruptPattern = value
+			} else {
+				h.InterruptInputPattern = value
 			}
+		case "interrupt_clear":
+			h.InterruptClear = strings.Fields(value)
+		case "interrupt":
+			h.Interrupt = strings.Fields(value)
 		case "turn_history":
 			h.TurnHistory = value
 		case "handshake":
@@ -349,6 +363,10 @@ func (c *Config) setTop(key, value string) error {
 		return nil
 	}
 	switch key {
+	case "direct_steer_timeout":
+		return dur(&c.DirectSteerTimeout)
+	case "direct_steer_poll":
+		return dur(&c.DirectSteerPoll)
 	case "dashboard_sort", "catalogue_sort", "public_tests_sort":
 		field := strings.TrimPrefix(value, "-")
 		valid := false

@@ -333,6 +333,37 @@ func (a *app) dispatch(act action) (bool, error) {
 			}
 			return command(root, args...)
 		})
+	case "direct-steer-form", "broadcast-form":
+		name := a.m.agent()
+		if len(act.Values) > 0 && act.Values[0] != "" {
+			name = act.Values[0]
+		}
+		title := "Direct steer to " + name
+		if act.Kind == "broadcast-form" {
+			name = "*"
+			title = "Broadcast to all running employees (including CEO; excluding public testers)"
+		}
+		if name == "" {
+			return false, fmt.Errorf("select an employee")
+		}
+		a.m.Form = newForm("direct-steer", title, []field{
+			{Label: "Recipient", Value: name, Kind: kindStatic},
+			{Label: "Delivery", Value: "queued", Kind: kindChoice, Options: []option{{Value: "queued", Title: "Queued: after current work finishes"}, {Value: "immediate", Title: "Immediate: interrupt, then submit in the same conversation"}}},
+			{Label: "Prompt"}, {Label: "Or read from file", Kind: kindFile, Base: root, Empty: "none"},
+		}, nil)
+	case "direct-steer":
+		a.work(act.Kind, func() (string, error) {
+			args := []string{"direct-steer", "-mode", act.Values[1], "-text", act.Values[2]}
+			if act.Values[0] == "*" {
+				args = append(args, "-all")
+			} else {
+				args = append(args, act.Values[0])
+			}
+			if act.Values[3] != "" {
+				args = append(args, "-file", absolute(act.Values[3], root))
+			}
+			return command(root, args...)
+		})
 	case "steer-form":
 		name := act.Values[0]
 		if name == "ceo" {

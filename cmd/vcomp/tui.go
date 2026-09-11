@@ -29,7 +29,7 @@ func wantsTUI(cmd string, args []string) bool {
 	switch cmd {
 	case "start", "run", "status", "setup", "roles", "tui":
 		return true
-	case "hire", "steer", "message", "reset", "stop", "user-run":
+	case "hire", "steer", "direct-steer", "message", "reset", "stop", "user-run":
 		for i := 0; i < len(args); i++ {
 			if args[i] == "-root" || args[i] == "--root" {
 				i++
@@ -73,6 +73,8 @@ func cmdTUI(cmd string, args []string) error {
 		opt.Action = "message-form"
 	case "steer":
 		opt.Action = "steer-form"
+	case "direct-steer":
+		opt.Action = "direct-steer-form"
 	case "user-run":
 		opt.Screen = 1
 		opt.Action = "test-form"
@@ -81,7 +83,7 @@ func cmdTUI(cmd string, args []string) error {
 	case "stop":
 		opt.Action = "stop-confirm"
 	}
-	if name != "" && cmd != "hire" && cmd != "steer" && cmd != "message" {
+	if name != "" && cmd != "hire" && cmd != "steer" && cmd != "direct-steer" && cmd != "message" {
 		return fmt.Errorf("unexpected argument %q", name)
 	}
 	return tui.Run(path, opt)

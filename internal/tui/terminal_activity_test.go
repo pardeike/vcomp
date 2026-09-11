@@ -58,3 +58,34 @@ func TestTerminalFollowsChronologicallyAndFreezesWhileReading(t *testing.T) {
 		t.Fatal("status or latest record missing", text)
 	}
 }
+
+func TestDirectSteerAndBroadcastActions(t *testing.T) {
+	m := fixture()
+	m.Selected = 3
+	if act := m.key(key{Text: "i"}); act == nil || act.Kind != "direct-steer-form" || act.Values[0] != "developer-03" {
+		t.Fatal(act)
+	}
+	if act := m.key(key{Text: "B"}); act == nil || act.Kind != "broadcast-form" {
+		t.Fatal(act)
+	}
+	m.Detail = "agent"
+	if act := m.key(key{Text: "B"}); act != nil {
+		t.Fatal("broadcast must belong to dashboard", act)
+	}
+	if act := m.key(key{Text: "i"}); act == nil || act.Kind != "direct-steer-form" {
+		t.Fatal(act)
+	}
+	a := app{m: m}
+	if _, err := a.dispatch(action{Kind: "direct-steer-form", Values: []string{"ceo"}}); err != nil {
+		t.Fatal(err)
+	}
+	if a.m.Form.Fields[1].Value != "queued" {
+		t.Fatal("default is not queued")
+	}
+	if _, err := a.dispatch(action{Kind: "broadcast-form"}); err != nil {
+		t.Fatal(err)
+	}
+	if a.m.Form.Fields[0].Value != "*" {
+		t.Fatal("not a broadcast")
+	}
+}

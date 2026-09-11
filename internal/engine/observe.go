@@ -23,7 +23,7 @@ type RoleObservation struct {
 
 type AgentView struct {
 	Name, Session, State, Harness, Model, Output, Error string
-	Inbox, Idle                                         int
+	Inbox, Idle, DirectPending                          int
 	Changed                                             time.Time
 	Turns                                               TurnStats
 }
@@ -107,6 +107,7 @@ func Observe(root string) Observation {
 		sess := r.Session(v.Config.SessionPrefix)
 		if s := saved.Roles[r.Name]; s != nil && s.Session != "" {
 			sess = s.Session
+			a.DirectPending = len(s.DirectPrompts)
 		}
 		for candidate, name := range owned {
 			if name == r.Name {

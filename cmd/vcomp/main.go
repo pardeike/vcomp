@@ -33,6 +33,7 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp hire     NAME [-position P] [-backstory "..."] [-replace]
   vcomp message  NAME [-root DIR] -subject "..." [-text "..."] [-file FILE]
   vcomp steer    NAME [-root DIR] [-text "..."] [-file FILE]
+  vcomp direct-steer NAME | -all [-root DIR] [-mode queued|immediate] [-text "..."] [-file FILE]
   vcomp status   [-root DIR]
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
   vcomp user-run [-root DIR] [-instructions FILE] [-text "..."]
@@ -85,6 +86,8 @@ func main() {
 			err = cmdMessage(args)
 		case "steer":
 			err = cmdSteer(args)
+		case "direct-steer":
+			err = cmdDirectSteer(args)
 		case "status":
 			err = cmdStatus(args)
 		case "reset":
@@ -393,6 +396,11 @@ func runEngine(root string) error {
 		return err
 	}
 	defer e.Unlock()
+	closeControl, err := e.ListenControl()
+	if err != nil {
+		return err
+	}
+	defer closeControl()
 
 	// A result file that is already here was not written by this run's CEO, so
 	// this company is finished rather than finishing.

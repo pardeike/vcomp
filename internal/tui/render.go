@@ -208,9 +208,9 @@ func (m *model) footer(w, h int) row {
 		if m.Follow {
 			state = "following"
 		}
-		return hints(w, size, "v", "verbosity", "f", "follow ("+state+")", "↑↓", "scroll", "Tab", "next tab", "Esc", "back", "a", "intervene", "m", "message")
+		return hints(w, size, "v", "verbosity", "f", "follow ("+state+")", "↑↓", "scroll", "Tab", "next tab", "Esc", "back", "i", "direct steer", "a", "intervene", "m", "message")
 	case m.Detail == "agent":
-		return hints(w, size, "m", "message", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "a", "intervene", "t", "steer", "p", "settings", "b", "replace", "e", "edit")
+		return hints(w, size, "i", "direct steer", "m", "message", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "a", "intervene", "t", "steer", "p", "settings", "b", "replace", "e", "edit")
 	case m.Detail != "":
 		return hints(w, size, "↑↓", "scroll", "Esc", "back", "q", "leave")
 	}
@@ -219,7 +219,7 @@ func (m *model) footer(w, h int) row {
 		if len(m.Data.View.Agents) == 0 {
 			return hints(w, size, "c", "set up", "o", "open", "?", "help", "q", "leave")
 		}
-		return hints(w, size, "Enter", "open role", "S", "sort", "m", "message", "s", "start", "x", "stop", "h", "hire", "t", "steer", "a", "intervene", "?", "help", "q", "leave")
+		return hints(w, size, "Enter", "open role", "S", "sort", "i", "direct steer", "B", "broadcast", "m", "message", "s", "start", "x", "stop", "h", "hire", "t", "steer", "a", "intervene", "?", "help", "q", "leave")
 	case 1:
 		return hints(w, size, "Enter", "open test", "S", "sort", "n", "new test", "?", "help", "q", "leave")
 	case 2:

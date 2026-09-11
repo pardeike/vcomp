@@ -21,16 +21,18 @@ import (
 )
 
 type roleState struct {
-	LastReady    string `json:"lastReady,omitempty"`
-	Session      string `json:"session"`
-	SettingsHash string `json:"settingsHash"`
-	RoleHash     string `json:"roleHash"`
-	Cmd          string `json:"cmd"`     // what we last started; a change makes resuming impossible
-	Started      bool   `json:"started"` // we have run this occupant before, so resume it
-	Harness      string `json:"harness"` // a conversation cannot move between harnesses
-	NeedShake    bool   `json:"needShake"`
-	NeedPrompt   bool   `json:"needPrompt"`
-	Resumed      bool   `json:"resumed"` // the pending prompt is a welcome-back, not a hello
+	DirectError   string   `json:"directError,omitempty"`
+	DirectPrompts []string `json:"directPrompts,omitempty"`
+	LastReady     string   `json:"lastReady,omitempty"`
+	Session       string   `json:"session"`
+	SettingsHash  string   `json:"settingsHash"`
+	RoleHash      string   `json:"roleHash"`
+	Cmd           string   `json:"cmd"`     // what we last started; a change makes resuming impossible
+	Started       bool     `json:"started"` // we have run this occupant before, so resume it
+	Harness       string   `json:"harness"` // a conversation cannot move between harnesses
+	NeedShake     bool     `json:"needShake"`
+	NeedPrompt    bool     `json:"needPrompt"`
+	Resumed       bool     `json:"resumed"` // the pending prompt is a welcome-back, not a hello
 	// Failure state is deliberately not persisted: restarting the engine is a
 	// person saying "try again", and it should not inherit an old verdict.
 	LaunchRetryAt time.Time `json:"-"`
@@ -70,13 +72,14 @@ type state struct {
 }
 
 type Engine struct {
-	root    string
-	cfg     config.Config
-	st      state
-	log     *log.Logger
-	logF    *os.File
-	lockF   *os.File
-	notices map[string]string
+	controls chan controlCall
+	root     string
+	cfg      config.Config
+	st       state
+	log      *log.Logger
+	logF     *os.File
+	lockF    *os.File
+	notices  map[string]string
 }
 
 func New(root string) (*Engine, error) { return newEngine(root, false) }
@@ -225,6 +228,9 @@ func (e *Engine) Run(stop <-chan struct{}) bool {
 			if e.Tick() {
 				return e.close()
 			}
+		case call := <-e.controls:
+			t.Stop()
+			call.reply <- e.directSteer(call.request, stop)
 		}
 	}
 }
