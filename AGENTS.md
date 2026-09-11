@@ -3,7 +3,8 @@
 `vcomp` runs a small company of AI agents. Each employee is a real CLI coding
 agent (`claude`, `codex`, …) living in its own tmux session, its own folder, and
 its own head. They coordinate **only through the filesystem** — no message bus,
-no RPC, no shared memory.
+no inter-agent RPC, no shared memory. Optional MCP tools are conveniences over
+those same files, not a second coordination mechanism.
 
 Two rules shape the whole design:
 

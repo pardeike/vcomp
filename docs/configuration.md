@@ -49,6 +49,15 @@ precedence over shipped defaults.
 For the shipped CLI presets and local endpoint examples, see
 [CLI harnesses and local models](harnesses.md).
 
+## Optional company tools
+
+`mcp_enabled = true` enables the built-in company-tool integration when an
+employee harness next starts. Set it to `false` to opt out. It does not restart
+existing employees or apply to public testers. `mcp_timeout = 30s` sets the
+request deadline for the bundled pi adapter; other CLIs retain their own MCP
+timeout settings. See [company tools and harness
+integration](harnesses.md#optional-company-tools) for scope and activation.
+
 ## Launch recovery
 
 `launch_retry_delay = 1m` controls how long an employee waits after tmux fails

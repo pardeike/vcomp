@@ -236,3 +236,62 @@ has gone. This applies only after vcomp itself interrupted the turn. It does not
 clear a pre-existing draft in an otherwise idle session. Other native queued
 messages are not discarded. Live post-interrupt and restored-input frames are
 covered by the readiness fixtures.
+
+## Optional company tools
+
+`mcp_enabled = true` is the default. When vcomp starts an employee, it supplies
+six optional tools through a built-in MCP server. No separate server install,
+API key, network listener, or port is needed. Each harness launches its own
+`vcomp mcp -root <company> -role <employee>` subprocess over stdin/stdout.
+Both arguments are explicit, and the root is resolved to its canonical path.
+Two companies can use identical employee names without sharing tool state.
+They still need distinct `session_prefix` values for their tmux sessions, as
+before; MCP adds no shared port or global configuration to coordinate.
+
+| Tool | Information or action |
+| --- | --- |
+| `company_overview` | Company paths, employee names and professions, observed state, inbox counts, turn statistics when available, three recent commits and five recent public-run states |
+| `role_read` | Existing role, conventions, notes or personal goals, in pages |
+| `inbox_list` | Exact topic names, short previews and modification times |
+| `inbox_read` | A topic's message and attachment names; reading leaves it in place |
+| `message_send` | Publish an ordinary inbox message with the sending employee's identity |
+| `inbox_remove` | Remove a specific handled topic and its attachments from the caller's inbox |
+
+Harnesses may prefix tool names. OMP versions using device tools expose these
+as `xd://mcp__vcomp_company_<tool>` through their ordinary read/write tools. Lists and text are paginated, defaulting to 20
+entries or lines and capped at 100. Long lines and previews are explicitly
+shortened; the full files remain available. An overview reports observations,
+not an assessment of productivity. It includes observation timestamps where
+available. Sending a message does not interrupt anyone or establish that it was
+read, and employee messages do not get the user's `URGENT - FROM USER` prefix.
+
+The tools wrap the existing filesystem conventions. They do not add priorities,
+assign work, change product editing, or replace any role's instructions. Ordinary
+file tools remain equally valid. The overview does not include the CEO's goal,
+source files, or private public-tester instructions. Public testers receive no
+company-tool integration.
+
+The five supported harnesses are wired without changing user-global settings:
+
+- **OMP:** a managed `vcomp-company` entry in the employee's `.omp/mcp.json`;
+  other server entries and settings are preserved.
+- **Claude:** `--mcp-config` points at an employee-specific generated JSON file.
+- **Codex:** command-line `mcp_servers.vcomp-company` configuration overrides.
+- **OpenCode:** a process-local `OPENCODE_CONFIG_CONTENT` entry, preserving
+  unrelated inline settings and merging with its ordinary configuration.
+- **pi:** a bundled extension supplied with `--extension`, translating these
+  six MCP tools into pi tools. It needs no additional package installation.
+  `mcp_timeout = 30s` controls its request deadline. Other CLIs use their own
+  MCP timeout settings.
+
+Generated Claude and pi files live under `.vcomp/mcp/<employee>/`. The reserved
+server name is `vcomp-company`. Custom harness presets are left unchanged;
+configure their MCP client manually with the stdio command above if desired.
+
+Set `mcp_enabled = false` before section headers to omit the integration on the
+next employee start. Configuration changes do not restart existing conversations.
+An already-running OMP session can load a prepared project configuration with
+`/mcp reload`; merely restarting the vcomp supervisor does not prepare or reload
+MCP for an existing employee. A failed preparation is logged and the employee
+still launches with its ordinary tools. Harness-level MCP permissions and
+server deny lists retain their normal effect.

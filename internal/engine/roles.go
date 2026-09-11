@@ -11,6 +11,7 @@ import (
 	"vcomp/internal/bootstrap"
 
 	"vcomp/internal/config"
+	"vcomp/internal/harness"
 	"vcomp/internal/space"
 	"vcomp/internal/tmux"
 )
@@ -173,16 +174,22 @@ func (e *Engine) roleError(name string, s *roleState, err error) {
 }
 
 func (e *Engine) hire(r space.Role, s *roleState) {
-	harness := e.cfg.HarnessFor(r.Name)
-	resume := s.Started && s.Harness == harness
+	cli := e.cfg.HarnessFor(r.Name)
+	resume := s.Started && s.Harness == cli
 	cmd, err := e.cfg.CommandFor(r.Name, resume)
 	if err != nil {
 		e.roleError(r.Name, s, err)
 		return
 	}
+	prepared, prepareErr := harness.WithMCP(e.root, r.Name, cli, cmd, e.cfg.MCPEnabled, e.cfg.MCPTimeout)
+	if prepareErr != nil {
+		e.log.Printf("%s: optional company tools unavailable: %v", r.Name, prepareErr)
+	} else {
+		cmd = prepared
+	}
 	next := *s
 	next.Session = r.Session(e.cfg.SessionPrefix)
-	next.Harness, next.Cmd = harness, strings.Join(cmd, " ")
+	next.Harness, next.Cmd = cli, strings.Join(cmd, " ")
 	next.Started, next.NeedPrompt, next.Resumed = true, true, resume
 	next.NeedShake = len(e.cfg.Handshake(r.Name)) > 0
 	next.Idle, next.PaneHash, next.LastReady = 0, "", ""

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfIsValid(t *testing.T) {
@@ -288,5 +289,24 @@ func TestLaunchRetryDelay(t *testing.T) {
 	c, err := Parse("launch_retry_delay = 7s")
 	if err != nil || c.LaunchRetryDelay.String() != "7s" {
 		t.Fatalf("retry delay override: %v, %v", c.LaunchRetryDelay, err)
+	}
+}
+
+func TestOptionalMCPSettings(t *testing.T) {
+	cfg := Default()
+	if !cfg.MCPEnabled || cfg.MCPTimeout != 30*time.Second {
+		t.Fatal("missing MCP defaults")
+	}
+	if err := cfg.setTop("mcp_enabled", "false"); err != nil || cfg.MCPEnabled {
+		t.Fatal("cannot disable MCP", err)
+	}
+	if err := cfg.setTop("mcp_timeout", "2s"); err != nil || cfg.MCPTimeout != 2*time.Second {
+		t.Fatal("cannot set MCP deadline", err)
+	}
+	if err := cfg.setTop("mcp_enabled", "perhaps"); err == nil {
+		t.Fatal("accepted invalid boolean")
+	}
+	if err := cfg.setTop("mcp_timeout", "0s"); err == nil {
+		t.Fatal("accepted zero deadline")
 	}
 }

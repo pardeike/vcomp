@@ -96,6 +96,8 @@ type RoleGenerator struct {
 }
 
 type Config struct {
+	MCPEnabled         bool
+	MCPTimeout         time.Duration
 	DirectSteerTimeout time.Duration
 	DirectSteerPoll    time.Duration
 	TerminalView       string
@@ -363,6 +365,14 @@ func (c *Config) setTop(key, value string) error {
 		return nil
 	}
 	switch key {
+	case "mcp_timeout":
+		return dur(&c.MCPTimeout)
+	case "mcp_enabled":
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("mcp_enabled: %w", err)
+		}
+		c.MCPEnabled = v
 	case "direct_steer_timeout":
 		return dur(&c.DirectSteerTimeout)
 	case "direct_steer_poll":

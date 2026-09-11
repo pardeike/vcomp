@@ -45,7 +45,7 @@ enforcement.
 ## The protocol
 
 **Inbox.** `spaces/<role>/inbox/<topic>/message.md`, plus attachments. To message
-someone you `mkdir` a topic folder in *their* inbox. That is the whole API.
+someone you `mkdir` a topic folder in *their* inbox. Optional [company tools](harnesses.md#optional-company-tools) can create and read these same files.
 
 There is no delivery receipt and no ack. You learn a message landed when the
 recipient deletes the topic folder, sends something back, or the change appears

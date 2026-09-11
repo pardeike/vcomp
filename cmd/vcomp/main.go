@@ -15,6 +15,7 @@ import (
 	"vcomp/internal/bootstrap"
 	"vcomp/internal/config"
 	"vcomp/internal/engine"
+	"vcomp/internal/mcp"
 	"vcomp/internal/space"
 	"vcomp/internal/tmux"
 	"vcomp/internal/tui"
@@ -34,6 +35,7 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp message  NAME [-root DIR] -subject "..." [-text "..."] [-file FILE]
   vcomp steer    NAME [-root DIR] [-text "..."] [-file FILE]
   vcomp direct-steer NAME | -all [-root DIR] [-mode queued|immediate] [-text "..."] [-file FILE]
+  vcomp mcp      -root DIR -role NAME   serve optional company tools over stdio
   vcomp status   [-root DIR]
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
   vcomp user-run [-root DIR] [-instructions FILE] [-text "..."]
@@ -88,6 +90,8 @@ func main() {
 			err = cmdSteer(args)
 		case "direct-steer":
 			err = cmdDirectSteer(args)
+		case "mcp":
+			err = cmdMCP(args)
 		case "status":
 			err = cmdStatus(args)
 		case "reset":
@@ -691,4 +695,21 @@ func cmdSteer(args []string) error {
 	}
 	fmt.Printf("updated %s's steering; the profession and backstory are unchanged\n", name)
 	return nil
+}
+
+func cmdMCP(args []string) error {
+	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	root := fs.String("root", "", "company root (required)")
+	role := fs.String("role", "", "employee name (required)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *root == "" || *role == "" || fs.NArg() != 0 {
+		return fmt.Errorf("usage: vcomp mcp -root DIR -role NAME")
+	}
+	server, err := mcp.New(*root, *role)
+	if err != nil {
+		return err
+	}
+	return server.Serve(os.Stdin, os.Stdout)
 }

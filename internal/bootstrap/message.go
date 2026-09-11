@@ -37,6 +37,46 @@ func Message(root, name, subject, body string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return publishMessage(dir, subject, text, "URGENT - FROM USER - ")
+}
+
+// EmployeeMessage uses the same ordinary inbox publication as a user message.
+func EmployeeMessage(root, sender, recipient, subject, body string) (string, error) {
+	if err := RoleName(sender); err != nil {
+		return "", err
+	}
+	if err := RoleName(recipient); err != nil {
+		return "", err
+	}
+	roles, err := space.Roles(root)
+	if err != nil {
+		return "", err
+	}
+	dir := ""
+	foundSender := false
+	for _, r := range roles {
+		if r.Name == sender {
+			foundSender = true
+		}
+		if r.Name == recipient {
+			dir = r.Dir
+		}
+	}
+	if !foundSender || dir == "" {
+		return "", fmt.Errorf("sender and recipient must be existing employees")
+	}
+	subject = strings.TrimSpace(subject)
+	if subject == "" || strings.ContainsAny(subject, "\r\n") || strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("provide a single-line subject and a nonempty message")
+	}
+	text, err := Load(root).Text("employee_message.md", map[string]string{"SENDER": sender, "SUBJECT": subject, "BODY": body})
+	if err != nil {
+		return "", err
+	}
+	return publishMessage(dir, subject, text, "")
+}
+
+func publishMessage(dir, subject, text, prefix string) (string, error) {
 	var safe strings.Builder
 	for _, r := range subject {
 		if safe.Len() >= 80 {
@@ -61,7 +101,7 @@ func Message(root, name, subject, body string) (string, error) {
 		return "", err
 	}
 	suffix := strings.TrimPrefix(filepath.Base(staging), ".user-message-")
-	target := filepath.Join(inbox, "URGENT - FROM USER - "+strings.TrimSpace(safe.String())+" - "+suffix)
+	target := filepath.Join(inbox, prefix+strings.TrimSpace(safe.String())+" - "+suffix)
 	if err := os.Rename(staging, target); err != nil {
 		return "", err
 	}
