@@ -14,7 +14,7 @@ The main screens are:
 
 - **Dashboard:** company and engine state, agents with inbox counts and recent
   terminal output, product progress, and public-run totals. Select an agent and
-  press Enter for its terminal, inbox messages, notes, personal goals, and role.
+  press Enter for its inbox messages, notes, terminal output, personal goals, and role.
 - **Public tests:** run status, instructions, version, impressions, and abandonment
   details. Create a test from this screen.
 - **Product:** git status and recent commits, with a diff view.
@@ -27,7 +27,7 @@ The main screens are:
 Main screen names stay the same at every terminal width. When all screen tabs
 do not fit, the header shows the current screen name and number. Tab cycles
 main screens; number keys select them directly. In employee detail, Tab and
-Shift-Tab instead change the Terminal, Inbox, Notes, Goals, and Role tabs. Arrows or j/k move through
+Shift-Tab instead change the Inbox, Notes, Terminal, Goals, and Role tabs. Arrows or j/k move through
 lists, Enter drills down, Escape returns, and ? shows keyboard help. The header
 carries the company name, engine status, and the age of the last observation;
 the footer lists the keys that apply to the current screen, form, or chooser.

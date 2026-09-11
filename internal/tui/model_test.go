@@ -17,7 +17,7 @@ func fixture() model {
 	for i := 0; i < 35; i++ {
 		name := fmt.Sprintf("developer-%02d", i)
 		m.Data.View.Agents = append(m.Data.View.Agents, engine.AgentView{Name: name, State: "quiet", Harness: "omp", Model: "local/model", Inbox: i, Output: "Read src/main.go\n正在测试\nwaiting for input"})
-		m.Data.AgentDocs[name] = []string{"terminal", "inbox", "notes", "goals", "role"}
+		m.Data.AgentDocs[name] = []string{"inbox", "notes", "terminal", "goals", "role"}
 	}
 	return m
 }
@@ -56,7 +56,7 @@ func TestNavigationAndFormEditing(t *testing.T) {
 		t.Fatal(m)
 	}
 	m.key(key{Name: "tab"})
-	if m.document() != "inbox" {
+	if m.document() != "notes" {
 		t.Fatal("detail tab did not change")
 	}
 	m.key(key{Name: "esc"})
@@ -602,7 +602,7 @@ func TestDashboardTimingUsesNarrowScreenSpace(t *testing.T) {
 
 func TestInboxRequestNavigationAndRefresh(t *testing.T) {
 	m := fixture()
-	m.Detail, m.Sub = "agent", 1
+	m.Detail, m.Sub = "agent", 0
 	m.Data.Inboxes = map[string][]inboxRequest{"developer-00": {{"a", "First body"}, {"b", "Second body"}, {"c", "Third body"}}}
 	if m.document() != "First body" {
 		t.Fatal(m.document())
@@ -641,7 +641,7 @@ func TestInboxRequestNavigationAndRefresh(t *testing.T) {
 	if m.InboxTopic != "" {
 		t.Fatal("empty inbox retained a request")
 	}
-	m.Sub, m.Scroll = 0, 6
+	m.Sub, m.Scroll = 2, 6
 	m.update(d)
 	if m.Scroll != 6 {
 		t.Fatal("inbox refresh changed terminal scroll")
@@ -658,7 +658,7 @@ func TestNavigationLabelsMatchTheirContext(t *testing.T) {
 			}
 		}
 	}
-	m.Screen, m.Detail, m.Sub = 0, "agent", 1
+	m.Screen, m.Detail, m.Sub = 0, "agent", 0
 	m.Data.Inboxes = map[string][]inboxRequest{"developer-00": {{"alpha", "Message one"}, {"beta", "Message two"}}}
 	m.key(key{Name: "right"})
 	for _, w := range []int{40, 66, 160} {
@@ -674,7 +674,7 @@ func TestNavigationLabelsMatchTheirContext(t *testing.T) {
 			t.Fatal("top header advertises wrong Tab action inside role")
 		}
 	}
-	m.Sub = 2
+	m.Sub = 1
 	if !strings.Contains(m.footer(66, 32).Text, "next tab") {
 		t.Fatal("missing tab navigation label")
 	}
@@ -682,7 +682,7 @@ func TestNavigationLabelsMatchTheirContext(t *testing.T) {
 
 func TestInboxFirstRequestStaysSelectedOnFirstRefresh(t *testing.T) {
 	m := fixture()
-	m.Detail, m.Sub, m.Scroll = "agent", 1, 4
+	m.Detail, m.Sub, m.Scroll = "agent", 0, 4
 	m.Data.Inboxes = map[string][]inboxRequest{"developer-00": {{"b", "Original first"}}}
 	d := m.Data
 	d.Inboxes = map[string][]inboxRequest{"developer-00": {{"a", "New arrival"}, {"b", "Original first"}}}

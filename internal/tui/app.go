@@ -395,7 +395,7 @@ func (a *app) edit() error {
 	root := a.m.Root
 	path := filepath.Join(config.LocalDir(root), config.FileName)
 	if a.m.Detail == "agent" {
-		files := []string{"", "", "notes.md", "goals.md", ""}
+		files := []string{"", "notes.md", "", "goals.md", ""}
 		name := files[a.m.Sub]
 		if name == "" {
 			return fmt.Errorf("this view is read-only; use steering to change role instructions")

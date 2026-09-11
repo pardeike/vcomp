@@ -178,7 +178,7 @@ func (m *model) footer(w, h int) row {
 			return hints(w, size, "Enter", "done", "Ctrl-U", "clear", "Ctrl-S", "save", "Esc", "stop editing")
 		}
 		return hints(w, size, "Tab / ↑↓", "field", "Ctrl-S", "save", "Esc", "cancel")
-	case m.Detail == "agent" && m.Sub == 1:
+	case m.Detail == "agent" && m.Sub == 0:
 		return hints(w, size, "←→", "request", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "[ / ]", "request")
 	case m.Detail == "agent":
 		return hints(w, size, "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "a", "watch", "t", "steer", "p", "settings", "b", "replace", "e", "edit")
@@ -219,7 +219,7 @@ func (m *model) renderDocument(w, h int) []row {
 	body := []row{}
 	if m.Detail == "agent" {
 		spans := []span{{" " + m.agent(), accent}, {"  ", ""}}
-		for i, s := range []string{"Terminal", "Inbox", "Notes", "Goals", "Role"} {
+		for i, s := range []string{"Inbox", "Notes", "Terminal", "Goals", "Role"} {
 			if i == m.Sub {
 				spans = append(spans, span{" " + s + " ", selected}, span{" ", ""})
 			} else {
@@ -228,10 +228,10 @@ func (m *model) renderDocument(w, h int) []row {
 		}
 		tabs := styled(spans...)
 		if width(tabs.Text) > w {
-			tabs = styled(span{" " + m.agent(), accent}, span{fmt.Sprintf(" · %d/5 ", m.Sub+1), dim}, span{[]string{"Terminal", "Inbox", "Notes", "Goals", "Role"}[m.Sub], selected})
+			tabs = styled(span{" " + m.agent(), accent}, span{fmt.Sprintf(" · %d/5 ", m.Sub+1), dim}, span{[]string{"Inbox", "Notes", "Terminal", "Goals", "Role"}[m.Sub], selected})
 		}
 		body = append(body, tabs)
-		if m.Sub == 1 {
+		if m.Sub == 0 {
 			requests := m.Data.Inboxes[m.agent()]
 			if len(requests) > 0 {
 				index := m.inboxIndex()

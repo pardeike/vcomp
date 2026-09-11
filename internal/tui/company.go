@@ -109,7 +109,7 @@ func loadData(root string) data {
 		if a.Error != "" {
 			output = "ERROR: " + a.Error + "\n\n" + output
 		}
-		d.AgentDocs[a.Name] = []string{output, inbox.String(), readDocument(filepath.Join(dir, "notes.md"), false), readDocument(filepath.Join(dir, "goals.md"), false), readDocument(filepath.Join(dir, "role.md"), false)}
+		d.AgentDocs[a.Name] = []string{inbox.String(), readDocument(filepath.Join(dir, "notes.md"), false), output, readDocument(filepath.Join(dir, "goals.md"), false), readDocument(filepath.Join(dir, "role.md"), false)}
 	}
 	for _, r := range d.View.Runs {
 		dir := filepath.Join(root, space.PublicDir, r.Name)

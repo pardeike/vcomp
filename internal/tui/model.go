@@ -71,7 +71,7 @@ func (m *model) update(d data) {
 		name = m.run()
 	}
 	inboxIndex := m.inboxIndex()
-	if m.Detail == "agent" && m.Sub == 1 && m.InboxTopic == "" {
+	if m.Detail == "agent" && m.Sub == 0 && m.InboxTopic == "" {
 		if requests := m.Data.Inboxes[m.agent()]; len(requests) > 0 {
 			m.InboxTopic = requests[inboxIndex].Name
 		}
@@ -93,7 +93,7 @@ func (m *model) update(d data) {
 		}
 	}
 	m.Selected = max(0, min(m.Selected, m.count()-1))
-	if m.Detail == "agent" && m.Sub == 1 {
+	if m.Detail == "agent" && m.Sub == 0 {
 		requests := m.Data.Inboxes[m.agent()]
 		found := false
 		for _, request := range requests {
@@ -177,7 +177,7 @@ func (m *model) key(k key) *action {
 		m.switchScreen((m.Screen + step + len(screens)) % len(screens))
 		return nil
 	}
-	if m.Detail == "agent" && m.Sub == 1 && (k.Name == "left" || k.Name == "right" || k.Text == "[" || k.Text == "]") {
+	if m.Detail == "agent" && m.Sub == 0 && (k.Name == "left" || k.Name == "right" || k.Text == "[" || k.Text == "]") {
 		requests := m.Data.Inboxes[m.agent()]
 		if len(requests) > 0 {
 			step := 1
@@ -330,7 +330,7 @@ func (m *model) document() string {
 		return helpText
 	case "agent":
 		a := m.agent()
-		if m.Sub == 1 && len(m.Data.Inboxes[a]) > 0 {
+		if m.Sub == 0 && len(m.Data.Inboxes[a]) > 0 {
 			return m.Data.Inboxes[a][m.inboxIndex()].Content
 		}
 		if docs := m.Data.AgentDocs[a]; len(docs) > m.Sub {
@@ -356,7 +356,7 @@ func (m *model) document() string {
 }
 func (m *model) title() string {
 	if m.Detail == "agent" {
-		return m.agent() + " / " + []string{"Terminal", "Inbox", "Notes", "Personal goals", "Role"}[m.Sub]
+		return m.agent() + " / " + []string{"Inbox", "Notes", "Terminal", "Goals", "Role"}[m.Sub]
 	}
 	if m.Detail == "run" {
 		return m.run()
