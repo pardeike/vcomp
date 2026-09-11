@@ -1,0 +1,32 @@
+
+ ▐▛███▛█   Claude Code v2.1.268
+▝▜██████▀  Fable 5.1 with high effort · Claude Max
+  ▝▝ ▝▝    /private/var/folders/s5/21qknfyd6hx49g8__bwbh4pr0000gn/T/vcomp-ready-claude-jhp4bhkm · /rc
+
+  Fable 5.1 writes better code and reports progress on long tasks. Switch anytime with /model.
+
+❯ Run sleep 8 in the shell, then reply DONE. No file changes.
+
+⏺ Running the sleep now.
+
+  Ran 1 shell command
+
+⏺ DONE
+
+✻ Baked for 12s · done 12:16 PM
+
+❯ Run sleep 20 in the shell, then reply DONE. No file changes.
+
+  Ran 1 shell command
+
+⏺ DONE
+
+✻ Brewed for 24s · done 12:17 PM
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

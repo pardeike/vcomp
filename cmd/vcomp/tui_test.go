@@ -47,8 +47,8 @@ func TestTUIWorkflowInRealTerminal(t *testing.T) {
 	cfg.Goal = "Test the dashboard"
 	cfg.Roster = []string{"ceo", "developer"}
 	cfg.Harness = "fake"
-	cfg.Harnesses["fake"] = config.Harness{Start: []string{"/bin/cat"}, Resume: []string{"/bin/cat"}}
-	if err := config.UpdateLocal(root, []config.Override{{Key: "goal", Value: cfg.Goal}, {Key: "roster", Value: "ceo, developer"}, {Key: "harness", Value: "fake"}, {Key: "tick", Value: "100ms"}, {Key: "tui_refresh", Value: "100ms"}, {Key: "session_prefix", Value: "tui-workflow"}, {Section: "harness fake", Key: "start", Value: "/bin/cat"}, {Section: "harness fake", Key: "resume", Value: "/bin/cat"}}); err != nil {
+	cfg.Harnesses["fake"] = config.Harness{ReadyPattern: "(?s).*", Start: []string{"/bin/cat"}, Resume: []string{"/bin/cat"}}
+	if err := config.UpdateLocal(root, []config.Override{{Key: "goal", Value: cfg.Goal}, {Key: "roster", Value: "ceo, developer"}, {Key: "harness", Value: "fake"}, {Key: "tick", Value: "100ms"}, {Key: "tui_refresh", Value: "100ms"}, {Key: "session_prefix", Value: "tui-workflow"}, {Section: "harness fake", Key: "ready_pattern", Value: "(?s).*"}, {Section: "harness fake", Key: "start", Value: "/bin/cat"}, {Section: "harness fake", Key: "resume", Value: "/bin/cat"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := bootstrap.Init(root, cfg); err != nil {

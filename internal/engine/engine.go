@@ -21,6 +21,7 @@ import (
 )
 
 type roleState struct {
+	LastReady    string `json:"lastReady,omitempty"`
 	Session      string `json:"session"`
 	SettingsHash string `json:"settingsHash"`
 	RoleHash     string `json:"roleHash"`
@@ -41,6 +42,8 @@ type roleState struct {
 }
 
 type runState struct {
+	LastReady  string    `json:"lastReady,omitempty"`
+	Harness    string    `json:"harness,omitempty"`
 	Session    string    `json:"session"`
 	Attempts   int       `json:"attempts"`
 	StartedAt  time.Time `json:"startedAt"`

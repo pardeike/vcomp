@@ -29,9 +29,12 @@ A tick loop (default 20s). Per tick:
    After `max_restarts` harness exits the
    role is marked broken, the command and the pane's last lines are logged
    once, and it is left alone until `role.md` or the settings change.
-6. **Nudge** — a session whose pane text is byte-identical for N consecutive
-   ticks is stuck, so type the nudge prompt at it. Because agents animate while
-   thinking, a busy one never looks idle; this needs no harness-specific parsing.
+6. **Nudge** — require a recognized, available harness input prompt, then use
+   byte-identical frames for the configured idle pacing. Frozen terminal output
+   alone never proves readiness. Busy, queued, retry, and unknown states wait.
+   Initial and resumed prompts use the same readiness check. A sent ready frame
+   is remembered across supervisor restarts, so an unacknowledged submission is
+   not repeatedly sent into an unchanged UI.
 7. **User runs** — a `public/run-*` without `impressions.md` and without a live
    session gets a fresh ephemeral agent; when the file appears the session is
    killed. Runs that fail twice get an `abandoned.txt` and are skipped.
@@ -102,9 +105,9 @@ Things that look arbitrary and are not, so nobody "fixes" them back:
   loop that built nothing. That is what `handshake = Enter` is for. It is a
   per-harness setting rather than engine code because the next harness will ask
   something else.
-- **A dialog is invisible to idle detection.** A harness sitting on a question
-  looks exactly like a harness thinking, so the engine cannot discover this by
-  watching; it has to be told what to press.
+- **Unknown UI states wait.** Initial trust/login dialogs must be resolved
+  before a regular prompt is sent. A configured startup handshake remains a
+  separate action. It is not evidence that the harness is ready for a prompt.
 - **`tmux -t =name` only works for session targets.** Pane targets
   (`capture-pane`, `send-keys`) take the bare name; the `=` form fails with
   "can't find pane".

@@ -45,7 +45,7 @@ func startChild(t *testing.T, root, prefix string) *exec.Cmd {
 	if err := os.MkdirAll(config.LocalDir(root), 0755); err != nil {
 		t.Fatal(err)
 	}
-	conf := "roster = ceo\nharness = fake\ntick = 20ms\nsession_prefix = " + prefix + "\n[harness fake]\nstart = /bin/cat\nresume = /bin/cat\n"
+	conf := "roster = ceo\nharness = fake\ntick = 20ms\nsession_prefix = " + prefix + "\n[harness fake]\nready_pattern = (?s).*\nstart = /bin/cat\nresume = /bin/cat\n"
 	if err := os.WriteFile(filepath.Join(config.LocalDir(root), config.FileName), []byte(conf), 0644); err != nil {
 		t.Fatal(err)
 	}

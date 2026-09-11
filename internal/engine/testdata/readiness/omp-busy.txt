@@ -1,0 +1,31 @@
+
+╭─── omp v18.1.17 ─────────────────────────────────────────────────────────────────────────────────╮
+│                          │ Tips                                                                  │
+│      Welcome back!       │ # for prompt actions                                                  │
+│                          │ / for commands                                                        │
+│       ████████████       │ ! to run bash                                                         │
+│          ██  ██          │ $ to run python                                                       │
+│          ██  ██          │ ───────────────────────────────────────────────────────────────────── │
+│          ▒▒  ██          │ LSP Servers                                                           │
+│              ██          │ No LSP servers                                                        │
+│                          │                                                                       │
+│          probe           │                                                                       │
+│          local           │                                                                       │
+│                          │ ───────────────────────────────────────────────────────────────────── │
+│                          │ Recent sessions                                                       │
+│                          │ No recent sessions                                                    │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+│                          │                                                                       │
+╰──────────────────────────┴───────────────────────────────────────────────────────────────────────╯
+ Tip: Drop the word `ultrathink` in your message for harder multi-step reasoning — watch it glow
+      rainbow as you type
+
+
+ Reply with PROBE_A_SEED
+
+
+  ⎋ Working…
+ ⠇ 1s > ⬢ probe > 🗑 …p-harness-smoke-hz27or78/omp/employee-a ▶──────────────15%────────────────────────────────────────────────────╎─────────┃─────────────128K─
+╰─

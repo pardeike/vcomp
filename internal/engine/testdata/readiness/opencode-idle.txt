@@ -1,0 +1,44 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                              ▄
+                                                             █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+                                                             █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+                                                             ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+
+                                           ┃
+                                           ┃  Ask anything… "Fix a TODO in the codebase"
+                                           ┃
+                                           ┃  Build auto · Probe local
+                                           ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                           tab agents  ctrl+p commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  /private/var/folders/s5/21qknfyd6hx49g8__bwbh4pr0000gn/T/vcomp-harness-smoke-hz27or78/opencode/employee-a                                            1.18.30

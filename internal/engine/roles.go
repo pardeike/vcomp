@@ -108,11 +108,14 @@ func (e *Engine) syncRole(r space.Role) {
 		return
 	}
 	if s.NeedPrompt {
+		if !e.promptReady(sess, s.Harness) {
+			return
+		}
 		kind := config.PromptFresh
 		if s.Resumed {
 			kind = config.PromptBack
 		}
-		if !e.send(sess, e.cfg.Prompt(r.Name, kind)) {
+		if !e.sendWhenReady(sess, s.Harness, e.cfg.Prompt(r.Name, kind), &s.LastReady) {
 			return
 		}
 		e.log.Printf("%s: %s prompt sent", r.Name, kind)
@@ -131,8 +134,12 @@ func (e *Engine) syncRole(r space.Role) {
 	} else {
 		s.PaneHash, s.Idle = h, 0
 	}
+	if !e.promptReady(sess, s.Harness) {
+		s.Idle = 0
+		return
+	}
 	if s.Idle >= e.cfg.IdleThreshold(r.Name, inboxEmpty(r)) {
-		if e.send(sess, e.cfg.Prompt(r.Name, config.PromptNudge)) {
+		if e.sendWhenReady(sess, s.Harness, e.cfg.Prompt(r.Name, config.PromptNudge), &s.LastReady) {
 			e.notice("quiet/"+r.Name, fmt.Sprintf("%s: quiet; nudged (inbox %d)", r.Name, countDir(r.Inbox())))
 			s.Idle, s.PaneHash = 0, ""
 		}
@@ -159,7 +166,7 @@ func (e *Engine) hire(r space.Role, s *roleState) {
 	next.Harness, next.Cmd = harness, strings.Join(cmd, " ")
 	next.Started, next.NeedPrompt, next.Resumed = true, true, resume
 	next.NeedShake = len(e.cfg.Handshake(r.Name)) > 0
-	next.Idle, next.PaneHash = 0, ""
+	next.Idle, next.PaneHash, next.LastReady = 0, "", ""
 	if err := tmux.New(next.Session, r.Dir, cmd, e.metadata("role", r.Name, &next)); err != nil {
 		s.LaunchRetryAt = time.Now().Add(e.cfg.LaunchRetryDelay)
 		e.roleError(r.Name, s, fmt.Errorf("%w; retrying after %s", err, e.cfg.LaunchRetryDelay))

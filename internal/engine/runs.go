@@ -94,10 +94,11 @@ func (e *Engine) syncRuns() {
 			continue
 		}
 		next := *rs
+		next.Harness = e.cfg.HarnessFor("")
 		next.Attempts++
 		next.StartedAt = time.Now()
 		next.Session = run.Session(e.cfg.SessionPrefix)
-		next.NeedPrompt, next.Idle, next.PaneHash = true, 0, ""
+		next.NeedPrompt, next.Idle, next.PaneHash, next.LastReady = true, 0, "", ""
 		next.NeedShake = len(e.cfg.Handshake("")) > 0
 		if err := tmux.New(next.Session, run.Dir, cmd, e.metadata("run", run.Name, &next)); err != nil {
 			e.notice("run-error/"+run.Name, fmt.Sprintf("%s: cannot start user: %v", run.Name, err))
@@ -113,6 +114,11 @@ func (e *Engine) syncRuns() {
 // pokeUser drives a live user session: prompt it, nudge it if it stalls, and
 // kill it if it overruns.
 func (e *Engine) pokeUser(run space.Run, rs *runState) {
+	if time.Since(rs.StartedAt) > e.cfg.UserTimeout {
+		_ = e.killSession(e.runSession(run))
+		e.log.Printf("%s: user run timed out", run.Name)
+		return
+	}
 	if rs.NeedShake {
 		if err := tmux.SendKeys(e.runSession(run), e.cfg.Handshake("")); err != nil {
 			return
@@ -121,15 +127,13 @@ func (e *Engine) pokeUser(run space.Run, rs *runState) {
 		return
 	}
 	if rs.NeedPrompt {
-		if !e.send(e.runSession(run), e.cfg.Prompt("", config.PromptUser)) {
+		if !e.promptReady(e.runSession(run), e.runHarness(rs)) {
+			return
+		}
+		if !e.sendWhenReady(e.runSession(run), e.runHarness(rs), e.cfg.Prompt("", config.PromptUser), &rs.LastReady) {
 			return
 		}
 		rs.NeedPrompt, rs.Idle, rs.PaneHash = false, 0, ""
-		return
-	}
-	if time.Since(rs.StartedAt) > e.cfg.UserTimeout {
-		_ = e.killSession(e.runSession(run))
-		e.log.Printf("%s: user run timed out", run.Name)
 		return
 	}
 	pane, err := tmux.Capture(e.runSession(run))
@@ -141,9 +145,14 @@ func (e *Engine) pokeUser(run space.Run, rs *runState) {
 	} else {
 		rs.PaneHash, rs.Idle = h, 0
 	}
+	if !e.promptReady(e.runSession(run), e.runHarness(rs)) {
+		rs.Idle = 0
+		return
+	}
 	if rs.Idle >= e.cfg.IdleThreshold("", false) {
-		e.send(e.runSession(run), e.cfg.Prompt("", config.PromptUserNudge))
-		rs.Idle, rs.PaneHash = 0, ""
+		if e.sendWhenReady(e.runSession(run), e.runHarness(rs), e.cfg.Prompt("", config.PromptUserNudge), &rs.LastReady) {
+			rs.Idle, rs.PaneHash = 0, ""
+		}
 	}
 }
 
@@ -223,4 +232,11 @@ func copyTree(src, dst string) error {
 		}
 		return os.WriteFile(filepath.Join(dst, rel), b, info.Mode().Perm())
 	})
+}
+
+func (e *Engine) runHarness(rs *runState) string {
+	if rs.Harness != "" {
+		return rs.Harness
+	}
+	return e.cfg.HarnessFor("")
 }

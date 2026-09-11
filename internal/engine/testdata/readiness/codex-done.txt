@@ -1,0 +1,32 @@
+│ >_ OpenAI Codex (v0.154.0)                               │
+│                                                          │
+│ model:       gpt-6-astra medium   /model to change       │
+│ directory:   /private/var/…/T/vcomp-ready-codex-vx3551vl │
+│ permissions: YOLO mode                                   │
+╰──────────────────────────────────────────────────────────╯
+
+  Tip: New Use /fast to enable our fastest inference with increased plan usage.
+
+⚠ 1 MCP startup issue · ctrl + t for details
+
+• You have 3 usage limit resets available. Run /usage to use one.
+
+
+› Run sleep 8 in the shell, then reply DONE. No file changes.
+
+
+• I’ll run sleep 8 in the shell.
+
+• Ran sleep 8
+  └ (no output)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• DONE
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Ask Codex to do anything
+
+  gpt-6-astra medium · Ready · Context 95% left

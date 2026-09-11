@@ -57,10 +57,11 @@ func LocalDir(root string) string { return filepath.Join(root, DirName) }
 // Harness is how to start a CLI agent, and how to start it again so that it
 // keeps the memory of its previous session.
 type Harness struct {
-	Start  []string
-	Resume []string
-	Model  string
-	Effort string
+	ReadyPattern, BusyPattern string
+	Start                     []string
+	Resume                    []string
+	Model                     string
+	Effort                    string
 	// Models and Efforts are the values the interface offers in its choosers;
 	// they are suggestions only, and any other value can still be typed.
 	Models  []string
@@ -276,6 +277,17 @@ func (c *Config) set(kind, name, key, value string) error {
 			h.Models = list(value)
 		case "efforts":
 			h.Efforts = list(value)
+		case "ready_pattern", "busy_pattern":
+			if value != "" {
+				if _, err := regexp.Compile(value); err != nil {
+					return fmt.Errorf("%s: %w", key, err)
+				}
+			}
+			if key == "ready_pattern" {
+				h.ReadyPattern = value
+			} else {
+				h.BusyPattern = value
+			}
 		case "turn_history":
 			h.TurnHistory = value
 		case "handshake":

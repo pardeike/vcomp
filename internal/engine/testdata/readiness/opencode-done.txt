@@ -1,0 +1,44 @@
+
+  ┃                                                                                                                     ACK_PROBE_A_SEED
+  ┃  Reply with PROBE_A_SEED
+  ┃                                                                                                                     Context
+                                                                                                                        0 tokens
+     ACK_PROBE_A_SEED                                                                                                   0% used
+                                                                                                                        $0.00 spent
+     ▣  Build · Probe · 8.4s
+                                                                                                                        LSP
+                                                                                                                        LSPs are disabled
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃                                                                                                                     /private/var/folders/s5/
+  ┃                                                                                                                     21qknfyd6hx49g8__bwbh4pr0000gn/T/
+  ┃  Build auto · Probe local                                                                                           vcomp-harness-smoke-hz27or78/opencode/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    employee-a
+   /private/var/folders/s5/21qknfyd6hx49g8__bwbh4pr0000gn/T/vcomp-harness-smoke-hz27or78/    tab agentsctrl+p
+   opencode/employee-a                                                                                 commands         • OpenCode 1.18.30

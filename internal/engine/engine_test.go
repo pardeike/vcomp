@@ -61,7 +61,7 @@ func company(t *testing.T, roster string, extraConf string) (string, string, *En
 		"tick = 1s\nidle_ticks = 1\nidle_ticks_empty = 5\n" +
 		"user_timeout = 10m\nuser_max_attempts = 2\n" +
 		"harness = fake\nroster = " + roster + "\n" +
-		"[harness fake]\nstart = " + script + " start\nresume = " + script + " resume\n" +
+		"[harness fake]\nready_pattern = (?s).*\nstart = " + script + " start\nresume = " + script + " resume\n" +
 		"[prompts]\nfresh = FRESHPROMPT\nback = BACKPROMPT\nnudge = NUDGEPROMPT\n" +
 		"user = USERPROMPT\nuser_nudge = USERNUDGE\n" + extraConf
 	if err := os.MkdirAll(config.LocalDir(root), 0o755); err != nil {
@@ -205,7 +205,7 @@ func TestEmptyInboxIsPacedMoreSlowly(t *testing.T) {
 // somewhere, and typing a prompt into that dialog answers it wrongly and quits.
 // A configured handshake is pressed first, on its own tick.
 func TestHandshakeIsSentBeforeTheFirstPrompt(t *testing.T) {
-	_, _, e := company(t, "ceo", "[harness fake]\nhandshake = Enter\n")
+	_, _, e := company(t, "ceo", "[harness fake]\nready_pattern = (?s).*\nhandshake = Enter\n")
 	ceo := prefix + "-ceo"
 
 	tick(t, e) // hire
@@ -465,7 +465,7 @@ func TestPublicTesterUsesSeparateHarnessAndHandshake(t *testing.T) {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$* $PWD\" >> "+logPath+"\nexec cat\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	root, workerLog, e := company(t, "ceo, developer-1", "[harness frontier]\nstart = "+script+" fresh --model {{model}} --effort {{effort}}\nresume = must-not-resume\nhandshake = Enter\n[user]\nharness = frontier\nmodel = review-model\neffort = high\n")
+	root, workerLog, e := company(t, "ceo, developer-1", "[harness frontier]\nready_pattern = (?s).*\nstart = "+script+" fresh --model {{model}} --effort {{effort}}\nresume = must-not-resume\nhandshake = Enter\n[user]\nharness = frontier\nmodel = review-model\neffort = high\n")
 	runDir := filepath.Join(root, "public", "run-0001")
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		t.Fatal(err)

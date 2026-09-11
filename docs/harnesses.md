@@ -177,3 +177,31 @@ or leave it empty to disable this measurement. The directory must contain OMP
 terminal breadcrumbs and reference OMP-format JSONL sessions. Other shipped
 harnesses currently leave it unset and display unavailable timing. See
 [dashboard progress](tui.md#dashboard-progress) for the counting rules.
+
+## Prompt readiness and queued messages
+
+Employees and public testers only receive automatic prompts when their running
+harness matches its configured `ready_pattern` and does not match
+`busy_pattern`. These are Go regular expressions over the original pane's
+visible text, with nonbreaking spaces normalized. Idle pacing begins after this
+check. Unchanged text during inference or tools no longer triggers nudges.
+
+The supplied patterns cover the installed OMP 18.1.17, pi 0.75.5, Claude Code
+2.1.268, Codex 0.154.0, and OpenCode 1.18.30 interfaces. Idle, busy and completed
+frames were checked for each. pi, OMP and OpenCode used a deliberately delayed
+local response fixture; Claude and Codex used short shell-sleep tasks.
+
+OMP's idle brand is `π`; during a turn it becomes a spinner and elapsed time.
+Codex reports Ready or Working in its footer. Claude and OpenCode expose
+interrupt controls while working; pi exposes its working loader. Pending
+messages and retry/compaction indicators also prevent submission.
+
+These checks are conservative UI observations, not a harness-side atomic API.
+Changed themes, versions or layouts can fail to match, in which case vcomp waits.
+A custom harness needs an explicit `ready_pattern`; an absent pattern disables
+its automatic prompts. Do not use a match-all pattern for a real agent. Startup
+trust/login dialogs may require interaction before readiness can be established.
+
+Readiness is checked again immediately before sending. A submitted ready-frame
+fingerprint is persisted to prevent duplicate submissions before the UI changes.
+Existing queued messages are not removed or rewritten by this change.

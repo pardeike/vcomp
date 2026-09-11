@@ -1,0 +1,44 @@
+
+  ┃                                                                                                                     New session - 2026-09-11T10:16:55.
+  ┃  Reply with PROBE_A_SEED                                                                                            310Z
+  ┃
+                                                                                                                        Context
+     ▣  Build · Probe                                                                                                   0 tokens
+                                                                                                                        0% used
+                                                                                                                        $0.00 spent
+
+                                                                                                                        LSP
+                                                                                                                        LSPs are disabled
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃                                                                                                                     /private/var/folders/s5/
+  ┃                                                                                                                     21qknfyd6hx49g8__bwbh4pr0000gn/T/
+  ┃                                                                                                                     vcomp-harness-smoke-hz27or78/opencode/
+  ┃  Build auto · Probe local                                                                                           employee-a
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ⬝⬝⬝⬝⬝⬝⬝⬝  esc interrupt                                                               tab agents  ctrl+p commands    • OpenCode 1.18.30
