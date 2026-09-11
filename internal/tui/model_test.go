@@ -541,7 +541,7 @@ func TestDashboardTurnsTopicsAndRecentCommits(t *testing.T) {
 		Started: time.Date(2026, 9, 11, 10, 24, 3, 0, time.Local), Average: 138 * time.Second}
 	m.Data.ProductSummary = "abc1234 Add fishing controls"
 	m.Data.RecentCommits = []string{m.Data.ProductSummary, "def5678 Draw lake scene", "123abcd Add app window"}
-	m.Data.InboxTopics = map[string][]string{"developer-00": {"add-casting-animation", "fix-line-tension"}}
+	m.Data.Inboxes = map[string][]inboxRequest{"developer-00": {{Name: "add-casting-animation"}, {Name: "fix-line-tension"}}}
 	for _, size := range [][2]int{{160, 40}, {140, 40}, {120, 30}, {80, 30}, {40, 12}} {
 		rows := m.render(size[0], size[1])
 		text := draw(rows, false)
@@ -597,5 +597,97 @@ func TestDashboardTimingUsesNarrowScreenSpace(t *testing.T) {
 		if width(rows[3].Text) > tc.width {
 			t.Fatalf("row overflow: %q", rows[3].Text)
 		}
+	}
+}
+
+func TestInboxRequestNavigationAndRefresh(t *testing.T) {
+	m := fixture()
+	m.Detail, m.Sub = "agent", 1
+	m.Data.Inboxes = map[string][]inboxRequest{"developer-00": {{"a", "First body"}, {"b", "Second body"}, {"c", "Third body"}}}
+	if m.document() != "First body" {
+		t.Fatal(m.document())
+	}
+	m.key(key{Name: "right"})
+	if m.document() != "Second body" || m.InboxTopic != "b" {
+		t.Fatal("next request failed")
+	}
+	m.Scroll = 5
+	m.key(key{Text: "]"})
+	if m.document() != "Third body" || m.Scroll != 0 {
+		t.Fatal("request change did not reset scroll")
+	}
+	m.Scroll = 4
+	m.key(key{Name: "right"})
+	if m.Scroll != 4 || m.document() != "Third body" {
+		t.Fatal("last request boundary changed view")
+	}
+	m.key(key{Text: "["})
+	m.Scroll = 3
+	d := m.Data
+	d.Inboxes = map[string][]inboxRequest{"developer-00": {{"0-new", "New body"}, {"a", "First body"}, {"b", "Second body"}, {"c", "Third body"}}}
+	m.update(d)
+	if m.document() != "Second body" || m.Scroll != 3 {
+		t.Fatal("new mail moved the selected request")
+	}
+	d.Inboxes = map[string][]inboxRequest{"developer-00": {{"0-new", "New body"}, {"a", "First body"}, {"c", "Third body"}}}
+	m.update(d)
+	if m.document() != "Third body" || m.Scroll != 0 {
+		t.Fatal("deleted request did not select its successor")
+	}
+	d.Inboxes = nil
+	m.update(d)
+	m.key(key{Name: "left"})
+	m.key(key{Name: "right"})
+	if m.InboxTopic != "" {
+		t.Fatal("empty inbox retained a request")
+	}
+	m.Sub, m.Scroll = 0, 6
+	m.update(d)
+	if m.Scroll != 6 {
+		t.Fatal("inbox refresh changed terminal scroll")
+	}
+}
+
+func TestNavigationLabelsMatchTheirContext(t *testing.T) {
+	m := fixture()
+	for screen, name := range screens {
+		m.Screen = screen
+		for _, w := range []int{40, 66, 160} {
+			if !strings.Contains(m.tabs(w).Text, name) {
+				t.Fatalf("missing screen name %q at %d", name, w)
+			}
+		}
+	}
+	m.Screen, m.Detail, m.Sub = 0, "agent", 1
+	m.Data.Inboxes = map[string][]inboxRequest{"developer-00": {{"alpha", "Message one"}, {"beta", "Message two"}}}
+	m.key(key{Name: "right"})
+	for _, w := range []int{40, 66, 160} {
+		footer := m.footer(w, 32).Text
+		if strings.Contains(footer, "document") || !strings.Contains(footer, "request") {
+			t.Fatalf("wrong inbox hints: %q", footer)
+		}
+		rows := m.renderDocument(w, 25)
+		if !strings.Contains(rows[1].Text, "Request 2 of 2 · beta") || m.document() != "Message two" {
+			t.Fatal("request heading/content mismatch")
+		}
+		if strings.Contains(m.tabs(w).Text, "Tab next screen") {
+			t.Fatal("top header advertises wrong Tab action inside role")
+		}
+	}
+	m.Sub = 2
+	if !strings.Contains(m.footer(66, 32).Text, "next tab") {
+		t.Fatal("missing tab navigation label")
+	}
+}
+
+func TestInboxFirstRequestStaysSelectedOnFirstRefresh(t *testing.T) {
+	m := fixture()
+	m.Detail, m.Sub, m.Scroll = "agent", 1, 4
+	m.Data.Inboxes = map[string][]inboxRequest{"developer-00": {{"b", "Original first"}}}
+	d := m.Data
+	d.Inboxes = map[string][]inboxRequest{"developer-00": {{"a", "New arrival"}, {"b", "Original first"}}}
+	m.update(d)
+	if m.document() != "Original first" || m.Scroll != 4 {
+		t.Fatal("first refresh changed request or scroll")
 	}
 }

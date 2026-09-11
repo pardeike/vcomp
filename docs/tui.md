@@ -24,7 +24,10 @@ The main screens are:
 - **Activity:** the engine log, with scrolling and a return-to-latest action.
 - **Role catalogue:** available professions, with a hire form.
 
-Tab cycles screens; number keys select them directly. Arrows or j/k move through
+Main screen names stay the same at every terminal width. When all screen tabs
+do not fit, the header shows the current screen name and number. Tab cycles
+main screens; number keys select them directly. In employee detail, Tab and
+Shift-Tab instead change the Terminal, Inbox, Notes, Goals, and Role tabs. Arrows or j/k move through
 lists, Enter drills down, Escape returns, and ? shows keyboard help. The header
 carries the company name, engine status, and the age of the last observation;
 the footer lists the keys that apply to the current screen, form, or chooser.
@@ -142,7 +145,11 @@ same conversation retains its counts; a fresh conversation starts new counts.
 The measurements are display-only and never influence supervision or prompts.
 
 The selected employee's preview lists up to three inbox directory names, with
-a count of additional requests. The full inbox remains available through the
-employee detail screen. Taller dashboards show up to three recent product
+a count of additional requests. The Inbox tab in employee detail shows one request at a time, with its
+directory name and position (for example, `Request 2 of 5`). Left/Right or
+`[` / `]` selects the previous/next request; Up/Down, Page Up/Down, and Home/End
+scroll its content. Requests are ordered by directory name. New arrivals keep
+the current selection; if the selected request disappears, the view selects
+the next available request, or the last one if it was at the end. Taller dashboards show up to three recent product
 commit messages above the role table; the Product screen retains the longer
 history. These additions shrink or disappear when the terminal lacks space.

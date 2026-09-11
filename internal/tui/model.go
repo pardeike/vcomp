@@ -7,14 +7,16 @@ import (
 	"vcomp/internal/engine"
 )
 
-var screens = []string{"Dashboard", "Public tests", "Product", "Settings", "Goal / result", "Activity", "Roles"}
+var screens = []string{"Dashboard", "Public tests", "Product", "Settings", "Goal / result", "Activity", "Role catalogue"}
+
+type inboxRequest struct{ Name, Content string }
 
 type data struct {
 	View                                       engine.Observation
 	Product, Diff, Goal, Result, Log, Settings string
 	ProductSummary                             string
 	RecentCommits                              []string
-	InboxTopics                                map[string][]string
+	Inboxes                                    map[string][]inboxRequest
 	AgentDocs                                  map[string][]string
 	RunDocs                                    map[string]string
 	Positions                                  []bootstrap.Position
@@ -27,6 +29,7 @@ type model struct {
 	Root                          string
 	Screen, Selected, Scroll, Sub int
 	Detail                        string
+	InboxTopic                    string
 	Form                          *form
 	Confirm                       *action
 	Confirmation                  string
@@ -67,6 +70,12 @@ func (m *model) update(d data) {
 	} else if m.Screen == 1 {
 		name = m.run()
 	}
+	inboxIndex := m.inboxIndex()
+	if m.Detail == "agent" && m.Sub == 1 && m.InboxTopic == "" {
+		if requests := m.Data.Inboxes[m.agent()]; len(requests) > 0 {
+			m.InboxTopic = requests[inboxIndex].Name
+		}
+	}
 	m.Data = d
 	if name != "" {
 		if m.Screen == 0 {
@@ -84,6 +93,22 @@ func (m *model) update(d data) {
 		}
 	}
 	m.Selected = max(0, min(m.Selected, m.count()-1))
+	if m.Detail == "agent" && m.Sub == 1 {
+		requests := m.Data.Inboxes[m.agent()]
+		found := false
+		for _, request := range requests {
+			found = found || request.Name == m.InboxTopic
+		}
+		if !found || m.agent() != name {
+			next := ""
+			if len(requests) > 0 {
+				next = requests[min(inboxIndex, len(requests)-1)].Name
+			}
+			if next != m.InboxTopic || m.agent() != name {
+				m.InboxTopic, m.Scroll = next, 0
+			}
+		}
+	}
 }
 func (m *model) switchScreen(n int) {
 	m.Follow = n == 5
@@ -91,6 +116,7 @@ func (m *model) switchScreen(n int) {
 	m.Selected = 0
 	m.Scroll = 0
 	m.Sub = 0
+	m.InboxTopic = ""
 	m.Detail = ""
 	m.Message = ""
 }
@@ -151,6 +177,20 @@ func (m *model) key(k key) *action {
 		m.switchScreen((m.Screen + step + len(screens)) % len(screens))
 		return nil
 	}
+	if m.Detail == "agent" && m.Sub == 1 && (k.Name == "left" || k.Name == "right" || k.Text == "[" || k.Text == "]") {
+		requests := m.Data.Inboxes[m.agent()]
+		if len(requests) > 0 {
+			step := 1
+			if k.Name == "left" || k.Text == "[" {
+				step = -1
+			}
+			index := max(0, min(len(requests)-1, m.inboxIndex()+step))
+			if index != m.inboxIndex() {
+				m.InboxTopic, m.Scroll = requests[index].Name, 0
+			}
+		}
+		return nil
+	}
 	if len(k.Text) == 1 && k.Text[0] >= '1' && k.Text[0] <= '7' {
 		m.switchScreen(int(k.Text[0] - '1'))
 		return nil
@@ -203,6 +243,7 @@ func (m *model) key(k key) *action {
 			if m.agent() != "" {
 				m.Detail = "agent"
 				m.Sub = 0
+				m.InboxTopic = ""
 				m.Scroll = 0
 			}
 		case 1:
@@ -275,16 +316,27 @@ func (m *model) status() string {
 	}
 	return "STOPPED"
 }
+func (m *model) inboxIndex() int {
+	for i, request := range m.Data.Inboxes[m.agent()] {
+		if request.Name == m.InboxTopic {
+			return i
+		}
+	}
+	return 0
+}
 func (m *model) document() string {
 	switch m.Detail {
 	case "help":
 		return helpText
 	case "agent":
 		a := m.agent()
+		if m.Sub == 1 && len(m.Data.Inboxes[a]) > 0 {
+			return m.Data.Inboxes[a][m.inboxIndex()].Content
+		}
 		if docs := m.Data.AgentDocs[a]; len(docs) > m.Sub {
 			return docs[m.Sub]
 		}
-		return "No document available."
+		return "No content available."
 	case "run":
 		return m.Data.RunDocs[m.run()]
 	case "diff":
@@ -322,11 +374,11 @@ func (m *model) rootLabel() string {
 }
 
 const helpText = `NAVIGATION
-Tab / Shift-Tab  Change screen; in agent detail, change document
+Tab / Shift-Tab  Next/previous screen; in employee detail, next/previous tab
 1-7              Go directly to a screen
-Up/Down or j/k   Select an item or scroll a document
+Up/Down or j/k   Select a list item or scroll content
 PageUp/PageDown  Move a page
-Home/End         First/last item or top/bottom of a document
+Home/End         First/last list item or top/bottom of content
 Enter            Inspect an item; edit settings; hire from catalogue
 Esc              Back / cancel
 f                Return the activity view to its latest lines
@@ -341,6 +393,7 @@ h   Hire an employee
 n   Create a public user test
 
 SELECTED EMPLOYEE
+ Left/Right or [ / ]   Previous/next request in the Inbox tab
  a   Watch its tmux session; detach with Ctrl-B then d
      Inside tmux: Ctrl-B then L returns to the dashboard
  t   Edit CEO steering for this employee
@@ -348,7 +401,7 @@ SELECTED EMPLOYEE
  p   Set its harness, model, effort, and nudge pacing
 
 FILES AND FORMS
- e   Open the settings file, goal, or selected document in $EDITOR
+ e   Open the settings file, goal, or selected editable file in $EDITOR
      The default editor is vi. Generated role.md is read-only here.
  Tab / Shift-Tab   Next / previous field (Up/Down also work)
  Enter            Text: edit in place. Choices, paths, intervals: open a chooser
@@ -361,7 +414,7 @@ CHOOSERS
  Typing filters the list; the typed text is also offered as a value of its
  own after the matches, so anything the settings accept can still be entered.
  Up/Down or PageUp/PageDown move, Enter chooses, Esc goes back.
- Rosters: Space toggles an entry, Enter keeps the marked set.
+ Rosters: 0–9 sets the count; Enter/Space toggles 0/1; Tab accepts.
  Paths: Enter opens a folder or picks a file; Backspace goes to the parent.
  Paths inside the company are stored relative to it.
 

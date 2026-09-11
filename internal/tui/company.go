@@ -60,7 +60,7 @@ func gitText(root string, args ...string) string {
 	return strings.TrimSpace(string(b))
 }
 func loadData(root string) data {
-	d := data{InboxTopics: map[string][]string{}, View: engine.Observe(root), AgentDocs: map[string][]string{}, RunDocs: map[string]string{}, Positions: bootstrap.Load(root).Positions()}
+	d := data{Inboxes: map[string][]inboxRequest{}, View: engine.Observe(root), AgentDocs: map[string][]string{}, RunDocs: map[string]string{}, Positions: bootstrap.Load(root).Positions()}
 	d.Goal = readDocument(filepath.Join(root, space.SpacesDir, "ceo", "goal.md"), false)
 	if d.View.Config.ResultFile != "" {
 		d.Result = readDocument(filepath.Join(root, d.View.Config.ResultFile), false)
@@ -97,8 +97,7 @@ func loadData(root string) data {
 			if !entry.IsDir() {
 				continue
 			}
-			d.InboxTopics[a.Name] = append(d.InboxTopics[a.Name], entry.Name())
-			fmt.Fprintf(&inbox, "# %s\n\n%s\n\n", entry.Name(), readDocument(filepath.Join(dir, "inbox", entry.Name(), "message.md"), false))
+			d.Inboxes[a.Name] = append(d.Inboxes[a.Name], inboxRequest{entry.Name(), readDocument(filepath.Join(dir, "inbox", entry.Name(), "message.md"), false)})
 		}
 		if inbox.Len() == 0 {
 			inbox.WriteString("Inbox is empty.")

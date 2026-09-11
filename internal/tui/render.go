@@ -138,21 +138,26 @@ func (m *model) header(w int) row {
 	return styled(spans...)
 }
 func (m *model) tabs(w int) row {
-	if w < 65 {
-		return styled(span{fmt.Sprintf(" %d/%d ", m.Screen+1, len(screens)), dim}, span{m.title(), accent}, span{"  Tab next", dim})
-	}
 	spans := []span{{" ", ""}}
 	for i, s := range screens {
-		if w < 100 {
-			s = []string{"Home", "Tests", "Product", "Settings", "Goal", "Log", "Roles"}[i]
-		}
 		if i == m.Screen {
 			spans = append(spans, span{fmt.Sprintf(" %d %s ", i+1, s), selected}, span{" ", ""})
 		} else {
 			spans = append(spans, span{fmt.Sprintf(" %d", i+1), dim}, span{" " + s + "  ", ""})
 		}
 	}
-	return styled(spans...)
+	full := styled(spans...)
+	if width(full.Text) <= w {
+		return full
+	}
+	hint := "  Tab next screen"
+	if m.Detail != "" {
+		hint = "  1–7 screens"
+	}
+	if m.Form != nil || m.Confirm != nil {
+		hint = ""
+	}
+	return styled(span{fmt.Sprintf(" %d/%d ", m.Screen+1, len(screens)), dim}, span{screens[m.Screen], accent}, span{hint, dim})
 }
 func (m *model) footer(w, h int) row {
 	size := fmt.Sprintf("%dx%d", w, h)
@@ -173,8 +178,10 @@ func (m *model) footer(w, h int) row {
 			return hints(w, size, "Enter", "done", "Ctrl-U", "clear", "Ctrl-S", "save", "Esc", "stop editing")
 		}
 		return hints(w, size, "Tab / ↑↓", "field", "Ctrl-S", "save", "Esc", "cancel")
+	case m.Detail == "agent" && m.Sub == 1:
+		return hints(w, size, "←→", "request", "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "[ / ]", "request")
 	case m.Detail == "agent":
-		return hints(w, size, "Tab", "document", "↑↓", "scroll", "a", "watch", "t", "steer", "p", "settings", "b", "replace", "e", "edit", "Esc", "back")
+		return hints(w, size, "Tab", "next tab", "↑↓", "scroll", "Esc", "back", "a", "watch", "t", "steer", "p", "settings", "b", "replace", "e", "edit")
 	case m.Detail != "":
 		return hints(w, size, "↑↓", "scroll", "Esc", "back", "q", "leave")
 	}
@@ -183,13 +190,13 @@ func (m *model) footer(w, h int) row {
 		if len(m.Data.View.Agents) == 0 {
 			return hints(w, size, "c", "set up", "o", "open", "?", "help", "q", "leave")
 		}
-		return hints(w, size, "Enter", "inspect", "s", "start", "x", "stop", "h", "hire", "t", "steer", "a", "watch", "?", "help", "q", "leave")
+		return hints(w, size, "Enter", "open role", "s", "start", "x", "stop", "h", "hire", "t", "steer", "a", "watch", "?", "help", "q", "leave")
 	case 1:
-		return hints(w, size, "Enter", "read", "n", "new test", "?", "help", "q", "leave")
+		return hints(w, size, "Enter", "open test", "n", "new test", "?", "help", "q", "leave")
 	case 2:
 		return hints(w, size, "Enter", "diff", "↑↓", "scroll", "?", "help", "q", "leave")
 	case 3:
-		return hints(w, size, "Enter", "settings", "e", "edit file", "?", "help", "q", "leave")
+		return hints(w, size, "Enter", "edit settings", "e", "edit file", "?", "help", "q", "leave")
 	case 4:
 		return hints(w, size, "e", "edit goal file", "↑↓", "scroll", "?", "help", "q", "leave")
 	case 5:
@@ -219,7 +226,18 @@ func (m *model) renderDocument(w, h int) []row {
 				spans = append(spans, span{" " + s + "  ", dim})
 			}
 		}
-		body = append(body, styled(spans...))
+		tabs := styled(spans...)
+		if width(tabs.Text) > w {
+			tabs = styled(span{" " + m.agent(), accent}, span{fmt.Sprintf(" · %d/5 ", m.Sub+1), dim}, span{[]string{"Terminal", "Inbox", "Notes", "Goals", "Role"}[m.Sub], selected})
+		}
+		body = append(body, tabs)
+		if m.Sub == 1 {
+			requests := m.Data.Inboxes[m.agent()]
+			if len(requests) > 0 {
+				index := m.inboxIndex()
+				body = append(body, row{Text: fmt.Sprintf(" Request %d of %d · %s", index+1, len(requests), requests[index].Name), Style: accent})
+			}
+		}
 	} else {
 		body = append(body, row{Text: " " + m.title(), Style: accent})
 	}
@@ -419,11 +437,11 @@ func (m *model) dashboard(w, h int) []row {
 	if a.Error != "" {
 		preview = append(preview, row{Text: "Error: " + a.Error, Style: bad})
 	}
-	topics := m.Data.InboxTopics[a.Name]
+	topics := m.Data.Inboxes[a.Name]
 	if len(topics) > 0 {
 		preview = append(preview, row{Text: "Inbox requests", Style: accent})
 		for _, topic := range topics[:min(3, len(topics))] {
-			preview = append(preview, row{Text: "  " + topic})
+			preview = append(preview, row{Text: "  " + topic.Name})
 		}
 		if len(topics) > 3 {
 			preview = append(preview, row{Text: fmt.Sprintf("  +%d more · Enter → inbox", len(topics)-3), Style: dim})
