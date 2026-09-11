@@ -105,6 +105,7 @@ type Config struct {
 	Prompts             map[string]string
 	Roster              []string
 	Roles               map[string]Role
+	User                Role // Public tester overrides; only harness, model and effort apply.
 }
 
 // Prompt kinds.
@@ -204,6 +205,10 @@ func (c *Config) Merge(text string) error {
 			kind, name = head[0], strings.Join(head[1:], " ")
 			switch kind {
 			case "prompts":
+			case "user":
+				if name != "" {
+					return at("[user] does not take a name")
+				}
 			case "harness", "role":
 				if name == "" {
 					return at("[%s] needs a name", kind)
@@ -233,6 +238,17 @@ func (c *Config) set(kind, name, key, value string) error {
 			return fmt.Errorf("unknown prompt %q", key)
 		}
 		c.Prompts[key] = value
+	case "user":
+		switch key {
+		case "harness":
+			c.User.Harness = value
+		case "model":
+			c.User.Model = value
+		case "effort":
+			c.User.Effort = value
+		default:
+			return fmt.Errorf("unknown user key %q", key)
+		}
 	case "harness":
 		h := c.Harnesses[name]
 		switch key {
@@ -358,10 +374,17 @@ func Valid(section, name, key, value string) error {
 	return c.set(section, name, key, value)
 }
 
-// HarnessFor names the harness a role runs under. A conversation started in
-// one harness cannot be resumed in another.
+// HarnessFor names the harness a role runs under; an empty role is a public tester.
+// A conversation started in one harness cannot be resumed in another.
 func (c Config) HarnessFor(role string) string {
-	return firstNonEmpty(c.Roles[role].Harness, c.Harness)
+	return firstNonEmpty(c.agentOverrides(role).Harness, c.Harness)
+}
+
+func (c Config) agentOverrides(role string) Role {
+	if role == "" {
+		return c.User
+	}
+	return c.Roles[role]
 }
 
 // Handshake is the key sequence a role's harness needs before it will accept a
@@ -371,9 +394,9 @@ func (c Config) Handshake(role string) []string {
 }
 
 // CommandFor builds the argv that starts a role's agent, applying the role's
-// harness, model and effort overrides.
+// harness, model and effort overrides. An empty role selects the public tester.
 func (c Config) CommandFor(role string, resume bool) ([]string, error) {
-	r := c.Roles[role]
+	r := c.agentOverrides(role)
 	hname := firstNonEmpty(r.Harness, c.Harness)
 	h, ok := c.Harnesses[hname]
 	if !ok {
@@ -425,7 +448,7 @@ func firstPositive(ns ...int) int {
 }
 
 // Override is one setting to write into a company's own config file. Section is
-// "" for a top-level key, or "role NAME" / "harness NAME" / "prompts".
+// "" for a top-level key, or "role NAME" / "harness NAME" / "user" / "prompts".
 type Override struct {
 	Section string
 	Key     string

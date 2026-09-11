@@ -87,6 +87,7 @@ func (e *Engine) syncRuns() {
 			continue
 		}
 		// Users never resume: every run is someone who has never seen this before.
+		// The empty role selects [user] overrides, including its harness handshake.
 		cmd, err := e.cfg.CommandFor("", false)
 		if err != nil {
 			e.notice("run-error/"+run.Name, fmt.Sprintf("%s: %v", run.Name, err))

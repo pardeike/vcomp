@@ -161,8 +161,8 @@ func (m *model) footer(w, h int) row {
 		return hints(w, size, "y", "confirm", "n / Esc", "cancel")
 	case m.Form != nil && m.Form.Picker != nil:
 		p := m.Form.Picker
-		if p.Checked != nil {
-			return hints(w, size, "Space", "toggle", "Enter", "done", "↑↓", "move", "Esc", "back", "type", "filter")
+		if p.Counts != nil {
+			return hints(w, size, "0–9", "count", "Enter", "toggle", "Tab", "done", "↑↓", "move", "Esc", "cancel")
 		}
 		if p.Dir != "" {
 			return hints(w, size, "Enter", "open / choose", "Backspace", "parent", "↑↓", "move", "Esc", "back", "type", "filter")
@@ -512,9 +512,9 @@ func (m *model) renderPicker(w, h, top int) []row {
 		if i != p.Cursor {
 			mark = "   "
 		}
-		if p.Checked != nil {
-			if p.Checked[o.Value] {
-				mark += "[x] "
+		if p.Counts != nil {
+			if p.Counts[o.Value] > 0 {
+				mark += fmt.Sprintf("[%d] ", p.Counts[o.Value])
 			} else {
 				mark += "[ ] "
 			}

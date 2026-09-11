@@ -42,8 +42,11 @@ and intervals use choosers.
   list does not can still be entered. Model and effort suggestions come from
   the `models` and `efforts` keys of the selected harness section and swap
   when the harness changes.
-- **Roster**: a checklist of the profession catalogue; Space toggles, Enter
-  keeps the marked set in the roster's existing order.
+- **Roster**: a profession list with counts; `0–9` sets the highlighted count,
+  Return or Space toggles off/on with one employee, Tab accepts, and Escape
+  cancels. Counts above one produce numbered names such as `developer-1` and
+  `developer-2`; unchanged counts preserve existing names and order. The CEO
+  count is limited to one.
 - **Path** (goal file, CEO instructions, steering or test instruction files,
   company directory): a folder browser starting at the company. Enter opens a
   folder or picks a file, Backspace goes to the parent, typing filters. Files

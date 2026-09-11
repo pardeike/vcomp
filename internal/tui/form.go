@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,7 +15,7 @@ const (
 	kindText     = ""
 	kindStatic   = "static"   // shown, never selected
 	kindChoice   = "choice"   // one of Options; Left/Right cycles, Enter picks, typing filters
-	kindMulti    = "multi"    // comma-separated subset of Options; Enter toggles in a list
+	kindMulti    = "multi"    // comma-separated roster; number keys set profession counts
 	kindFile     = "file"     // a path; Enter browses, typing edits
 	kindDir      = "dir"      // a directory path; Enter browses
 	kindNumber   = "number"   // Left/Right step, typing edits; empty inherits
@@ -32,12 +33,12 @@ type field struct {
 	Base               string // directory that relative paths in file fields refer to
 }
 type picker struct {
-	Items   []option
-	Checked map[string]bool
-	Order   []string // the multi field's existing entries, whose order is kept
-	Filter  string
-	Cursor  int
-	Dir     string
+	Items  []option
+	Counts map[string]int
+	Order  []string // the multi field's existing entries, whose order is kept
+	Filter string
+	Cursor int
+	Dir    string
 }
 type form struct {
 	Kind, Title      string
@@ -324,7 +325,7 @@ func (m *model) openPicker(filter string) {
 			}
 		}
 	case kindMulti:
-		p.Checked = map[string]bool{}
+		p.Counts = map[string]int{}
 		known := map[string]bool{}
 		for _, o := range v.Options {
 			known[o.Value] = true
@@ -332,11 +333,12 @@ func (m *model) openPicker(filter string) {
 		p.Items = append(p.Items, v.Options...)
 		for _, s := range strings.Split(v.Value, ",") {
 			if s = strings.TrimSpace(s); s != "" {
-				p.Checked[s] = true
+				base := p.group(s)
+				p.Counts[base]++
 				p.Order = append(p.Order, s)
-				if !known[s] {
-					known[s] = true
-					p.Items = append(p.Items, option{Value: s})
+				if !known[base] {
+					known[base] = true
+					p.Items = append(p.Items, option{Value: base})
 				}
 			}
 		}
@@ -464,6 +466,14 @@ func (m *model) pickerKey(k key) {
 			return
 		}
 		item := items[p.Cursor]
+		if p.Counts != nil {
+			if p.Counts[item.Value] > 0 {
+				p.Counts[item.Value] = 0
+			} else {
+				p.Counts[item.Value] = 1
+			}
+			return
+		}
 		switch {
 		case p.Dir != "" && item.Dir:
 			m.browseTo(item.Value)
@@ -473,17 +483,36 @@ func (m *model) pickerKey(k key) {
 				return
 			}
 			v.Value = relative(item.Value, v.Base)
-		case p.Checked != nil:
-			v.Value = p.joined()
 		default:
 			v.Value = item.Value
 		}
 		f.Picker = nil
 		f.changed(f.Selected)
+	case "tab":
+		if p.Counts != nil {
+			v.Value = p.joined()
+			f.Picker = nil
+			f.changed(f.Selected)
+		}
 	default:
-		if k.Text == " " && p.Checked != nil && len(items) > 0 {
-			p.Checked[items[p.Cursor].Value] = !p.Checked[items[p.Cursor].Value]
-			return
+		if p.Counts != nil && len(items) > 0 {
+			name := items[p.Cursor].Value
+			if k.Text == " " {
+				if p.Counts[name] > 0 {
+					p.Counts[name] = 0
+				} else {
+					p.Counts[name] = 1
+				}
+				return
+			}
+			if len(k.Text) == 1 && k.Text[0] >= '0' && k.Text[0] <= '9' {
+				n := int(k.Text[0] - '0')
+				if name == "ceo" {
+					n = min(n, 1)
+				}
+				p.Counts[name] = n
+				return
+			}
 		}
 		if k.Text != "" || k.Name == "paste" {
 			p.Filter += strings.ReplaceAll(k.Text, "\n", "")
@@ -491,20 +520,54 @@ func (m *model) pickerKey(k key) {
 		}
 	}
 }
+
+// group folds numbered employees into their profession's chooser row.
+func (p *picker) group(name string) string {
+	for _, o := range p.Items {
+		if o.Value == name {
+			return name
+		}
+		if suffix, ok := strings.CutPrefix(name, o.Value+"-"); ok {
+			if n, err := strconv.Atoi(suffix); err == nil && n > 0 {
+				return o.Value
+			}
+		}
+	}
+	return name
+}
+
 func (p *picker) joined() string {
+	original := map[string]int{}
+	for _, name := range p.Order {
+		original[p.group(name)]++
+	}
 	out := []string{}
 	seen := map[string]bool{}
-	for _, s := range p.Order {
-		if p.Checked[s] && !seen[s] {
-			out = append(out, s)
-			seen[s] = true
+	add := func(base string) {
+		if seen[base] {
+			return
+		}
+		seen[base] = true
+		n := p.Counts[base]
+		if n == 1 {
+			out = append(out, base)
+		} else {
+			for i := 1; i <= n; i++ {
+				out = append(out, base+"-"+strconv.Itoa(i))
+			}
+		}
+	}
+	for _, name := range p.Order {
+		base := p.group(name)
+		if p.Counts[base] == original[base] {
+			out = append(out, name) // An unchanged count preserves names and ordering.
+			seen[base] = true
+		} else {
+			add(base)
 		}
 	}
 	for _, o := range p.Items {
-		if p.Checked[o.Value] && !seen[o.Value] {
-			out = append(out, o.Value)
-			seen[o.Value] = true
-		}
+		add(o.Value)
 	}
 	return strings.Join(out, ", ")
 }

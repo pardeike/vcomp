@@ -95,6 +95,30 @@ func TestTUIWorkflowInRealTerminal(t *testing.T) {
 		}
 	}
 	wait("initial dashboard", func() bool { return has("Dashboard") && has("developer") })
+	keys("c")
+	wait("company settings", func() bool { return has("Company settings") })
+	keys("Down", "Down", "Enter")
+	typeText("developer")
+	wait("roster chooser", func() bool { return has("filter developer") })
+	typeText("2")
+	wait("two developers", func() bool { return has("[2]") && !has("filter developer2") })
+	typeText("0")
+	wait("cleared developers", func() bool { return has("[ ]") })
+	keys("Enter")
+	wait("Return defaults to one", func() bool { return has("[1]") })
+	keys("Tab")
+	wait("roster accepted", func() bool { return has("Company settings") && !has("filter developer") })
+	// Public-tester fields are separate and reachable in the real setup form.
+	keys("Down", "Down", "Down", "Down", "Down", "Down", "Down", "Down")
+	wait("public tester fields", func() bool { return has("Public tester harness") && has("Public tester model") })
+	keys("Down", "Enter")
+	typeText("review-only-model")
+	keys("Enter", "C-s")
+	wait("public tester settings saved", func() bool {
+		c, err := config.Load(root)
+		return err == nil && c.User.Model == "review-only-model" && c.Harnesses["fake"].Model == "" && strings.Join(c.Roster, ",") == "ceo,developer"
+	})
+	wait("settings closed", func() bool { return has("Company settings saved") })
 	keys("h")
 	wait("hire form suggests the next free name", func() bool { return has("Hire an employee") && has("developer-2") })
 	keys("Down", "Right") // the name follows the profession until typed over

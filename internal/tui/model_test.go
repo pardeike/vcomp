@@ -309,12 +309,12 @@ func TestChoosersReplaceTypedInput(t *testing.T) {
 	m.key(key{Name: "tab"})
 	m.key(key{Name: "enter"})
 	p := f.Picker
-	if p == nil || !p.Checked["ceo"] || p.Checked["designer"] {
+	if p == nil || p.Counts["ceo"] != 1 || p.Counts["designer"] != 0 {
 		t.Fatal("roster chooser lost its marks")
 	}
 	m.key(key{Name: "down"})
 	m.key(key{Text: " "})
-	m.key(key{Name: "enter"})
+	m.key(key{Name: "tab"})
 	if f.Fields[4].Value != "ceo, developer, designer" {
 		t.Fatalf("roster order changed: %q", f.Fields[4].Value)
 	}
@@ -388,6 +388,128 @@ func TestSettingsFormSwapsModelChoicesWithHarness(t *testing.T) {
 	}
 	if _, ok := f.Fields[5].option("high"); !ok {
 		t.Fatal("effort suggestions missing")
+	}
+}
+
+func TestPublicTesterSettingsRoundTrip(t *testing.T) {
+	t.Setenv(config.HomeEnv, t.TempDir())
+	root := t.TempDir()
+	f, err := settingsForm(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Fields[0].Value = "Build a small testable product"
+	f.Fields[2].Value = "ceo, developer-1, developer-2"
+	f.Fields[3].Value = "omp"
+	f.changed(3)
+	f.Fields[4].Value = "ollama/weak"
+	f.Fields[10].Value = "codex"
+	f.changed(10)
+	if _, ok := f.Fields[12].option("high"); !ok {
+		t.Fatal("reviewer effort choices did not follow its harness")
+	}
+	f.Fields[11].Value, f.Fields[12].Value = "frontier-reviewer", "high"
+	if err := saveSettings(root, f.values()); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(root)
+	if err != nil || c.User.Harness != "codex" || c.User.Model != "frontier-reviewer" || c.User.Effort != "high" || c.Harnesses["omp"].Model != "ollama/weak" {
+		t.Fatalf("settings lost or mixed: %+v, %v", c, err)
+	}
+	for _, name := range []string{"developer-1", "developer-2"} {
+		if _, err := os.Stat(filepath.Join(root, "spaces", name, "role.md")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err = settingsForm(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(config.LocalDir(root), config.FileName)
+	before, _ := os.ReadFile(p)
+	if err := saveSettings(root, f.values()); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(p)
+	if string(before) != string(after) {
+		t.Fatal("unchanged save rewrote public tester settings")
+	}
+	f.Fields[10].Value = "missing-reviewer"
+	if err := saveSettings(root, f.values()); err == nil {
+		t.Fatal("unknown reviewer harness accepted")
+	}
+	after, _ = os.ReadFile(p)
+	if string(before) != string(after) {
+		t.Fatal("invalid reviewer settings were written")
+	}
+	f.Fields[10].Value = ""
+	f.changed(10)
+	if err := saveSettings(root, f.values()); err != nil {
+		t.Fatal(err)
+	}
+	c, err = config.Load(root)
+	if err != nil || c.User.Harness != "" || c.User.Model != "" || c.User.Effort != "" || c.HarnessFor("") != "omp" {
+		t.Fatalf("clearing reviewer overrides did not restore inheritance: %+v, %v", c.User, err)
+	}
+}
+
+func TestRosterCountsAndToggle(t *testing.T) {
+	m := fixture()
+	f := newForm("test", "Roster", []field{{Label: "Roster", Kind: kindMulti, Value: "ceo, developer", Options: []option{{Value: "ceo"}, {Value: "developer"}, {Value: "designer"}}}}, nil)
+	m.Form = f
+	m.key(key{Name: "enter"})
+	m.key(key{Text: "9"})
+	if f.Picker.Counts["ceo"] != 1 {
+		t.Fatal("number key created multiple CEOs")
+	}
+	m.key(key{Name: "down"})
+	m.key(key{Text: "3"})
+	if f.Picker.Filter != "" || f.Picker.Counts["developer"] != 3 {
+		t.Fatal("digit filtered instead of setting the count")
+	}
+	m.key(key{Text: "2"}) // replaces, rather than appending to, the previous digit
+	m.key(key{Name: "tab"})
+	if f.Fields[0].Value != "ceo, developer-1, developer-2" {
+		t.Fatalf("wrong numbered roster: %s", f.Fields[0].Value)
+	}
+	m.key(key{Name: "enter"})
+	if f.Picker.Counts["developer"] != 2 || len(f.Picker.Items) != 3 {
+		t.Fatal("reopening did not group numbered developers")
+	}
+	m.key(key{Name: "down"})
+	m.key(key{Name: "enter"})
+	if f.Picker == nil || f.Picker.Counts["developer"] != 0 {
+		t.Fatal("Return did not toggle the profession off")
+	}
+	m.key(key{Name: "enter"})
+	if f.Picker.Counts["developer"] != 1 {
+		t.Fatal("Return did not default to one employee")
+	}
+	m.key(key{Text: "0"})
+	m.key(key{Name: "tab"})
+	if f.Fields[0].Value != "ceo" {
+		t.Fatal("zero did not clear developers")
+	}
+	// Existing numbering and interleaved ordering survive opening and accepting.
+	f.Fields[0].Value = "ceo, developer-2, designer, developer-5"
+	m.key(key{Name: "enter"})
+	m.key(key{Name: "tab"})
+	if f.Fields[0].Value != "ceo, developer-2, designer, developer-5" {
+		t.Fatal("unchanged counts renamed existing employees")
+	}
+	m.key(key{Name: "enter"})
+	m.key(key{Name: "down"})
+	m.key(key{Text: "9"})
+	for _, size := range [][2]int{{120, 30}, {80, 24}, {40, 12}} {
+		for _, row := range m.render(size[0], size[1]) {
+			if width(row.Text) > size[0] {
+				t.Fatalf("roster overflowed %v: %q", size, row.Text)
+			}
+		}
+	}
+	m.key(key{Name: "esc"})
+	if f.Fields[0].Value != "ceo, developer-2, designer, developer-5" {
+		t.Fatal("cancel changed the roster")
 	}
 }
 

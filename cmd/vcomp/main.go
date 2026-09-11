@@ -235,6 +235,9 @@ func setupCompany(root string) error {
 	ask("", "user_max_attempts", fmt.Sprint(cfg.UserMaxAttempts))
 	ask("", "session_prefix", cfg.SessionPrefix)
 	ask("", "result_file", cfg.ResultFile)
+	ask("user", "harness", cfg.User.Harness)
+	ask("user", "model", cfg.User.Model)
+	ask("user", "effort", cfg.User.Effort)
 
 	fmt.Printf("\nPer-role overrides. Enter a role name, or Enter to finish.\n")
 	for {

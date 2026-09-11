@@ -169,6 +169,7 @@ func settingsForm(root string) (*form, error) {
 		return nil, err
 	}
 	h := c.Harnesses[c.Harness]
+	userHarness := c.Harnesses[c.HarnessFor("")]
 	fields := []field{
 		{Label: "Goal", Value: c.Goal, Empty: "required unless a goal file is set"},
 		{Label: "Goal file", Value: c.GoalFile, Kind: kindFile, Base: root, Empty: "none; relative to the company or absolute"},
@@ -180,23 +181,35 @@ func settingsForm(root string) (*form, error) {
 		{Label: "Dashboard refresh", Value: c.TUIRefresh.String(), Kind: kindDuration, Options: durationOptions()},
 		{Label: "Session prefix", Value: c.SessionPrefix},
 		{Label: "CEO instructions file", Value: c.CEOInstructionsFile, Kind: kindFile, Base: root, Empty: "none"},
+		{Label: "Public tester harness", Value: c.User.Harness, Kind: kindChoice, Options: harnessOptions(c, "company default"), Empty: "company default"},
+		{Label: "Public tester model", Value: c.User.Model, Kind: kindChoice, Options: valueOptions(userHarness.Models, "selected harness default"), Empty: "selected harness default"},
+		{Label: "Public tester effort", Value: c.User.Effort, Kind: kindChoice, Options: valueOptions(userHarness.Efforts, "selected harness default"), Empty: "selected harness default"},
 	}
 	if c.GoalFile != "" {
 		fields[0].Value = ""
 	}
 	// Model and effort belong to the selected harness; switching it swaps them.
 	changed := func(f *form, i int) {
-		if i != 3 {
-			return
+		if i == 3 {
+			h := c.Harnesses[f.Fields[3].Value]
+			f.Fields[4].Value, f.Fields[4].Options = h.Model, valueOptions(h.Models, "harness default")
+			f.Fields[5].Value, f.Fields[5].Options = h.Effort, valueOptions(h.Efforts, "harness default")
 		}
-		h := c.Harnesses[f.Fields[3].Value]
-		f.Fields[4].Value, f.Fields[4].Options = h.Model, valueOptions(h.Models, "harness default")
-		f.Fields[5].Value, f.Fields[5].Options = h.Effort, valueOptions(h.Efforts, "harness default")
+		if i == 10 || i == 3 && f.Fields[10].Value == "" {
+			name := f.Fields[10].Value
+			if name == "" {
+				name = f.Fields[3].Value
+			}
+			h := c.Harnesses[name]
+			f.Fields[11].Options = valueOptions(h.Models, "selected harness default")
+			f.Fields[12].Options = valueOptions(h.Efforts, "selected harness default")
+			f.Fields[11].Value, f.Fields[12].Value = "", ""
+		}
 	}
 	return newForm("save-settings", "Company settings", fields, changed), nil
 }
 func saveSettings(root string, values []string) error {
-	if len(values) != 10 {
+	if len(values) != 13 {
 		return fmt.Errorf("incomplete settings form")
 	}
 	cfg, err := config.Load(root)
@@ -219,6 +232,9 @@ func saveSettings(root string, values []string) error {
 			section = "harness " + values[3]
 		}
 		overrides = append(overrides, config.Override{Section: section, Key: k, Value: values[i+2]})
+	}
+	for i, k := range []string{"harness", "model", "effort"} {
+		overrides = append(overrides, config.Override{Section: "user", Key: k, Value: values[i+10]})
 	}
 	// Validate a candidate in memory before writing settings or creating output.
 	for _, o := range overrides {
@@ -252,6 +268,9 @@ func saveSettings(root string, values []string) error {
 			return err
 		}
 	}
+	if _, err := cfg.CommandFor("", false); err != nil {
+		return fmt.Errorf("public tester: %w", err)
+	}
 	original, err := settingsForm(root)
 	if err != nil {
 		return err
@@ -265,7 +284,7 @@ func saveSettings(root string, values []string) error {
 			}
 			continue
 		}
-		if values[fieldIndex] != original.Fields[fieldIndex].Value || (o.Key == "model" || o.Key == "effort") && values[3] != original.Fields[3].Value {
+		if values[fieldIndex] != original.Fields[fieldIndex].Value || strings.HasPrefix(o.Section, "harness ") && values[3] != original.Fields[3].Value {
 			changed = append(changed, o)
 		}
 	}

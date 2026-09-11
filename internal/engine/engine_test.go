@@ -459,6 +459,56 @@ func TestAbandonsRunsThatNeverFinish(t *testing.T) {
 	}
 }
 
+func TestPublicTesterUsesSeparateHarnessAndHandshake(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "reviewer.log")
+	script := filepath.Join(t.TempDir(), "reviewer")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$* $PWD\" >> "+logPath+"\nexec cat\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	root, workerLog, e := company(t, "ceo, developer-1", "[harness frontier]\nstart = "+script+" fresh --model {{model}} --effort {{effort}}\nresume = must-not-resume\nhandshake = Enter\n[user]\nharness = frontier\nmodel = review-model\neffort = high\n")
+	runDir := filepath.Join(root, "public", "run-0001")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+	session := prefix + "-user-run-0001"
+	if !tmux.Exists(session) {
+		t.Fatal("reviewer was not started")
+	}
+	physicalRunDir, err := filepath.EvalSymlinks(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, logPath); !strings.Contains(got, "fresh --model review-model --effort high "+physicalRunDir) {
+		t.Fatalf("wrong reviewer command or working directory: %s", got)
+	}
+	if got := read(t, workerLog); strings.Count(got, "start ") != 2 || strings.Contains(got, "public/") {
+		t.Fatalf("employee/reviewer harnesses mixed: %s", got)
+	}
+	tick(t, e) // reviewer handshake, not the prompt yet
+	if got := pane(t, session); strings.Contains(got, "USERPROMPT") {
+		t.Fatal("reviewer prompt bypassed its handshake")
+	}
+	tick(t, e)
+	if got := pane(t, session); !strings.Contains(got, "USERPROMPT") {
+		t.Fatal("reviewer did not receive its prompt after handshake")
+	}
+	if err := tmux.Kill(session); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+	if got := read(t, logPath); strings.Count(got, "fresh --model review-model") != 2 {
+		t.Fatalf("reviewer retry must start fresh with the review model: %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "impressions.md"), []byte("Observed the product"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tick(t, e)
+	if tmux.Exists(session) || !tmux.Exists(prefix+"-ceo") {
+		t.Fatal("finishing the public test should stop only its reviewer")
+	}
+}
+
 func TestResumedSessionKeepsMemoryAfterLaterExit(t *testing.T) {
 	_, path, e := company(t, "ceo", "")
 	tick(t, e)

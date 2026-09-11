@@ -183,6 +183,82 @@ func TestResumeFallsBackToStart(t *testing.T) {
 	}
 }
 
+func TestPublicTesterOverridesAndInheritance(t *testing.T) {
+	t.Setenv(HomeEnv, t.TempDir())
+	root := t.TempDir()
+	global := `harness = omp
+[harness omp]
+model = ollama/weak
+effort = high
+[harness codex]
+model = frontier-default
+effort = low
+handshake = Enter
+[user]
+harness = codex
+model = frontier-reviewer
+effort = high
+[role user]
+model = ordinary-employee
+`
+	if err := os.WriteFile(filepath.Join(Home(), FileName), []byte(global), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd, err := c.CommandFor("", false)
+	if err != nil || strings.Join(cmd, " ") != "codex --dangerously-bypass-approvals-and-sandbox --model=frontier-reviewer --config=model_reasoning_effort=high" {
+		t.Fatalf("public tester command: %v, %v", cmd, err)
+	}
+	if strings.Join(c.Handshake(""), " ") != "Enter" || c.HarnessFor("") != "codex" {
+		t.Fatal("public tester did not select its harness and handshake")
+	}
+	for _, role := range []string{"ceo", "developer-1", "future-hire"} {
+		cmd, err := c.CommandFor(role, false)
+		if err != nil || !strings.Contains(strings.Join(cmd, " "), "--model ollama/weak --thinking high") {
+			t.Fatalf("employee %s inherited reviewer settings: %v, %v", role, cmd, err)
+		}
+	}
+	if c.User.Model == c.Roles["user"].Model {
+		t.Fatal("[role user] overwrote [user]")
+	}
+	// Blank per-company model/effort inherit the selected review harness.
+	if err := UpdateLocal(root, []Override{{Section: "user", Key: "model"}, {Section: "user", Key: "effort"}}); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd, err = c.CommandFor("", false)
+	if err != nil || !strings.Contains(strings.Join(cmd, " "), "--model=frontier-default --config=model_reasoning_effort=low") {
+		t.Fatalf("reviewer inheritance: %v, %v", cmd, err)
+	}
+	if err := UpdateLocal(root, []Override{{Section: "user", Key: "harness"}}); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := c.CommandFor("", false)
+	worker, _ := c.CommandFor("ceo", false)
+	if err != nil || strings.Join(user, " ") != strings.Join(worker, " ") {
+		t.Fatalf("empty [user] should preserve company defaults: %v, %v", user, err)
+	}
+	for _, bad := range []string{"[user named]\nmodel = x", "[user]\nmodle = x", "[user]\nstart = x"} {
+		if _, err := Parse(bad); err == nil {
+			t.Fatalf("accepted invalid configuration %q", bad)
+		}
+	}
+	c.User.Harness = "missing"
+	if _, err := c.CommandFor("", false); err == nil {
+		t.Fatal("unknown public harness silently fell back to company model")
+	}
+}
+
 func TestUpdateLocalKeepsUnansweredSettings(t *testing.T) {
 	t.Setenv(HomeEnv, t.TempDir())
 	root := t.TempDir()

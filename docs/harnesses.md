@@ -111,6 +111,14 @@ vcomp's `effort` to a CLI flag.
 See [OpenCode providers](https://opencode.ai/docs/providers/),
 [configuration](https://opencode.ai/docs/config/), and [CLI flags](https://opencode.ai/docs/cli/).
 
+## Separate public testers
+
+Set `[user]` `harness`, `model`, and `effort` to use a different CLI/model for
+public user tests. This can pair local-model employees with a frontier-model
+reviewer without changing the model inherited by new hires. The selected CLI
+must already be installed and authenticated. See [public tester settings](configuration.md#public-tester-model)
+for inheritance rules and an example.
+
 ## Sessions and startup
 
 All three presets use `--continue` for revival and omit it for a new or replaced

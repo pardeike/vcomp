@@ -41,6 +41,42 @@ nothing; any value can still be typed.
 For the shipped CLI presets and local endpoint examples, see
 [CLI harnesses and local models](harnesses.md).
 
+## Public tester model
+
+Public user tests have their own optional `[user]` section. For example, keep
+employees on the company's OMP harness while using Codex for outside reviews:
+
+```ini
+harness = omp
+
+[user]
+harness = codex
+model = gpt-6-astra
+effort = high
+```
+
+An empty user harness inherits the company harness. Empty model and effort
+inherit the selected harness's defaults. Leaving all three empty preserves the
+normal company defaults. These settings apply only to public tests, never to
+employees or future hires. `[role user]` is an ordinary employee override and
+does not configure public tests.
+
+Company settings exposes Public tester harness, model, and effort fields; plain
+`vcomp setup` asks for the same settings. Model and effort choices follow the
+tester harness independently of the employee harness. Each test starts a fresh
+conversation with that harness's startup command and handshake. Changes apply
+to new starts and retries, without interrupting a running tester.
+
+## Multiple employees of a profession
+
+In the initial-roster chooser, highlight a profession and press `1` through `9`
+to set its employee count. `0` clears it. Return or Space toggles between zero
+and one; Tab accepts the roster, and Escape cancels the chooser changes.
+Multiple employees are named `developer-1`, `developer-2`, and so on. An
+unchanged count preserves existing names and ordering. The CEO is limited to
+one, and the saved roster must include it. The initial roster controls company
+creation and reset; it does not hire or remove employees in a running company.
+
 ## Templates
 
 Every document an agent reads is rendered from a template, resolved the same
