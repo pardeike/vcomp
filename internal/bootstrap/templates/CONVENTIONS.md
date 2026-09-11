@@ -4,9 +4,21 @@ Binding for everyone. Re-read it when you are unsure.
 
 ## Your space
 
-You live in `spaces/<you>/`. That is your working directory. The company root is
+Every employee's space is `<company-root>/spaces/<employee-name>/`, including
+the CEO. Your session starts in your own space. From there, the company root is
 two levels up (`../..`). Your space is yours: notes, drafts, plans, scratch
 files — organise it however you like. Nobody will clean it up for you.
+
+Employee directories belong only under the company's `spaces/` directory.
+For example, the CEO lives at `<company-root>/spaces/ceo/`, never at
+`<company-root>/ceo/` or `<company-root>/product/ceo/`. Do not create duplicate
+role directories elsewhere. Use the actual employee directory name, such as
+`developer-1`, rather than guessing from a profession or title.
+
+Relative paths below assume you are in your own space. If a command changes
+directory, resolve subsequent paths from its actual working directory. When
+unsure, check `pwd` and locate the company root by its `CONVENTIONS.md` and
+`spaces/` before writing. Do not guess a path or create a missing recipient.
 
 `role.md` in your space says who you are. Read it first, every time you start.
 
@@ -19,12 +31,18 @@ not, with exactly one exception: their inbox.
 
 ## Messaging
 
-To send a message to someone:
+To send a message to an existing employee, use
+`<company-root>/spaces/<employee-name>/inbox/<topic>/message.md`.
+From your own space, that is:
 
 ```
 mkdir -p ../<them>/inbox/<topic-you-choose>
 write   ../<them>/inbox/<topic-you-choose>/message.md
 ```
+
+From the company root, use `spaces/<them>/inbox/<topic-you-choose>/` instead.
+Verify the recipient's space and `role.md` exist before creating the topic
+folder. Creating an inbox path does not hire an employee.
 
 Start `message.md` with a `From:` line naming yourself. Nothing enforces it, but
 the filesystem does not record who wrote a file, so without it nobody - not the

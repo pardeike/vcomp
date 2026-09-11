@@ -36,6 +36,12 @@ product repo. The goal is "known only to the CEO" by *convention*: it lives in
 `spaces/ceo/goal.md`, and only the CEO's `role.md` mentions it. Nobody is
 prevented from looking — they are just never told to.
 
+The shared conventions require employee directories to live under `spaces/`,
+including the CEO. They distinguish paths from an employee's starting directory
+from paths at the company root, and require checking the recipient's existing
+space before creating an inbox topic. These are prompt rules, not filesystem
+enforcement.
+
 ## The protocol
 
 **Inbox.** `spaces/<role>/inbox/<topic>/message.md`, plus attachments. To message
