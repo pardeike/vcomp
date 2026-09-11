@@ -240,7 +240,7 @@ covered by the readiness fixtures.
 ## Optional company tools
 
 `mcp_enabled = true` is the default. When vcomp starts an employee, it supplies
-six optional tools through a built-in MCP server. No separate server install,
+eight optional tools through a built-in MCP server. No separate server install,
 API key, network listener, or port is needed. Each harness launches its own
 `vcomp mcp -root <company> -role <employee>` subprocess over stdin/stdout.
 Both arguments are explicit, and the root is resolved to its canonical path.
@@ -255,6 +255,8 @@ before; MCP adds no shared port or global configuration to coordinate.
 | `inbox_list` | Exact topic names, short previews and modification times |
 | `inbox_read` | A topic's message and attachment names; reading leaves it in place |
 | `message_send` | Publish an ordinary inbox message with the sending employee's identity |
+| `product_work` | Create or reuse your product worktree; refresh only without unpublished work |
+| `product_publish` | Save and merge a contribution, or return conflicts in your copy |
 | `inbox_remove` | Remove a specific handled topic and its attachments from the caller's inbox |
 
 Harnesses may prefix tool names. OMP versions using device tools expose these
@@ -266,7 +268,8 @@ available. Sending a message does not interrupt anyone or establish that it was
 read, and employee messages do not get the user's `URGENT - FROM USER` prefix.
 
 The tools wrap the existing filesystem conventions. They do not add priorities,
-assign work, change product editing, or replace any role's instructions. Ordinary
+assign work or replace any role's instructions. The product tools implement
+[working copies and publication](company.md#product-working-copies). Ordinary
 file tools remain equally valid. The overview does not include the CEO's goal,
 source files, or private public-tester instructions. Public testers receive no
 company-tool integration.
@@ -280,7 +283,7 @@ The five supported harnesses are wired without changing user-global settings:
 - **OpenCode:** a process-local `OPENCODE_CONFIG_CONTENT` entry, preserving
   unrelated inline settings and merging with its ordinary configuration.
 - **pi:** a bundled extension supplied with `--extension`, translating these
-  six MCP tools into pi tools. It needs no additional package installation.
+  MCP tools into pi tools. It needs no additional package installation.
   `mcp_timeout = 30s` controls its request deadline. Other CLIs use their own
   MCP timeout settings.
 

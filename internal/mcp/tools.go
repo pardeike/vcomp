@@ -14,6 +14,7 @@ import (
 
 	"vcomp/internal/bootstrap"
 	"vcomp/internal/engine"
+	"vcomp/internal/product"
 )
 
 func (s *Server) Call(name string, raw json.RawMessage) (any, error) {
@@ -28,6 +29,10 @@ func (s *Server) Call(name string, raw json.RawMessage) (any, error) {
 		a.Role = s.Role
 	}
 	switch name {
+	case "product_work":
+		return product.Work(s.Root, s.Role)
+	case "product_publish":
+		return product.Publish(s.Root, s.Role, a.Summary)
 	case "company_overview":
 		return s.overview(a)
 	case "role_read":
@@ -269,7 +274,7 @@ func (s *Server) overview(a arguments) (any, error) {
 	for _, r := range v.Runs[max(0, len(v.Runs)-5):] {
 		runs = append(runs, object{"name": r.Name, "state": r.State})
 	}
-	result := object{"company_root": s.Root, "self": s.Role, "space": filepath.Join(s.Root, "spaces", s.Role), "product": filepath.Join(s.Root, "product"), "conventions": filepath.Join(s.Root, "CONVENTIONS.md"), "supervised": v.Supervised, "employees": employees, "employees_total": len(v.Agents), "next_offset": nextOffset(end, len(v.Agents)), "recent_commits": commits, "recent_public_runs": runs, "public_runs_total": len(v.Runs), "queried_at": time.Now().UTC().Format(time.RFC3339)}
+	result := object{"company_root": s.Root, "self": s.Role, "space": filepath.Join(s.Root, "spaces", s.Role), "product": filepath.Join(s.Root, "product"), "working_copy": filepath.Join(s.Root, "spaces", s.Role, "product"), "conventions": filepath.Join(s.Root, "CONVENTIONS.md"), "supervised": v.Supervised, "employees": employees, "employees_total": len(v.Agents), "next_offset": nextOffset(end, len(v.Agents)), "recent_commits": commits, "recent_public_runs": runs, "public_runs_total": len(v.Runs), "queried_at": time.Now().UTC().Format(time.RFC3339)}
 	if !v.ObservedAt.IsZero() {
 		result["engine_observed_at"] = v.ObservedAt.UTC().Format(time.RFC3339)
 	}

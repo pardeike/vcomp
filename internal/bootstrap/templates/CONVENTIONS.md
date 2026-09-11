@@ -70,12 +70,28 @@ so by replying; silently ignoring things is how projects rot.
 
 ## The product
 
-`../../product/` is a git repo and the only thing that ultimately matters. It is
-the company's shared, observable state. Commit small and often with honest
-messages — a diff is how everyone else learns what you did. Read the log and the
-diff to learn what they did.
+`../../product/` is the shared, published product. Other employees work
+concurrently. For contributions within your role, call `product_work` to get
+your reusable working copy at `./product/`, and edit there. From your space the
+CLI equivalent is `vcomp product-work <your-name> -root ../..`.
 
-Do not rewrite history and do not force-push. Others are reading.
+Call `product_publish` with a short, honest summary to save your contribution
+and merge it into the shared product. The CLI equivalent is
+`vcomp product-publish <your-name> -root ../.. -summary "what changed"`.
+Publishing is not approval or a claim that the assignment is finished. Publish
+useful increments; you do not need to finish an entire assignment first.
+Ordinary Git commands remain available, but a commit in your working copy alone
+is not publication. Do not edit or reset the shared checkout directly.
+
+If publication reports conflicts, your contribution remains in your working
+copy. Resolve the listed conflicts there, `git add` the resolved files, then
+publish again; ask a colleague if needed. Do not discard either contribution
+just to make the conflict disappear.
+
+Unpublished copies are visible to colleagues, but public tests use the committed
+shared product. Read its log and diffs to learn what others published. Calling
+`product_work` again refreshes your copy only when it has no unpublished work.
+Do not rewrite shared history or force-push.
 
 ## Public user runs
 

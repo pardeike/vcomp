@@ -5,13 +5,12 @@ package engine
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"vcomp/internal/bootstrap"
 	"vcomp/internal/config"
+	"vcomp/internal/product"
 	"vcomp/internal/space"
 	"vcomp/internal/tmux"
 )
@@ -173,65 +172,20 @@ func (e *Engine) prepareRun(run space.Run) error {
 	if _, err := os.Stat(dst); err == nil {
 		return nil
 	}
-	src := filepath.Join(e.root, space.ProductDir)
+
 	tmp, err := os.MkdirTemp(run.Dir, ".snapshot-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	if err := copyTree(src, tmp); err != nil {
+	version, err := product.Snapshot(e.root, tmp)
+	if err != nil {
 		return err
-	}
-	version := "unknown"
-	if out, err := exec.Command("git", "-C", src, "log", "-1", "--format=%h %s").Output(); err == nil {
-		version = strings.TrimSpace(string(out))
 	}
 	if err := space.WriteFile(filepath.Join(run.Dir, "version.txt"), []byte(version+"\n"), 0644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, dst)
-}
-
-// copyTree copies src to dst, leaving .git behind: the user gets the product,
-// not its history.
-func copyTree(src, dst string) error {
-	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		if d.Name() == ".git" {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(p)
-			if err != nil {
-				return err
-			}
-			return os.Symlink(target, filepath.Join(dst, rel))
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		b, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(filepath.Join(dst, rel), b, info.Mode().Perm())
-	})
 }
 
 func (e *Engine) runHarness(rs *runState) string {

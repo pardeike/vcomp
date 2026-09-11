@@ -193,7 +193,7 @@ malformed
 		t.Fatal(replies[1])
 	}
 	tools := replies[2]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 6 {
+	if len(tools) != 8 {
 		t.Fatal(tools)
 	}
 	for _, tool := range tools {

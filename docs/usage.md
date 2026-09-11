@@ -60,6 +60,8 @@ vcomp run      [-root DIR] [-goal "…"]  keep the company alive (foreground)
 vcomp roles    [-root DIR]              the role names a roster can contain
 vcomp hire     NAME [-position P] [-backstory "…"] [-replace]
 vcomp steer    NAME [-root DIR] [-text "…"] [-file FILE]
+vcomp product-work NAME [-root DIR]
+vcomp product-publish NAME [-root DIR] -summary "what changed"
 vcomp status   [-root DIR]
 vcomp reset    [-root DIR] [-y]         start the run over, keeping the settings
 vcomp user-run [-root DIR] [-instructions FILE] [-text "…"]

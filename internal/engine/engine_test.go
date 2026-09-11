@@ -578,6 +578,11 @@ func TestSnapshotPreservesLinksAndFailedCopyCanRetry(t *testing.T) {
 	product := filepath.Join(root, "product")
 	os.WriteFile(filepath.Join(product, "asset"), []byte("content"), 0755)
 	os.Symlink("asset", filepath.Join(product, "link"))
+	for _, args := range [][]string{{"add", "asset", "link"}, {"-c", "user.name=test", "-c", "user.email=test@localhost", "commit", "-m", "Publish assets"}} {
+		if out, err := exec.Command("git", append([]string{"-C", product}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("commit fixture: %s %v", out, err)
+		}
+	}
 	dir := filepath.Join(root, "public", "run-0001")
 	os.MkdirAll(dir, 0755)
 	run := space.Run{Name: "run-0001", Dir: dir}

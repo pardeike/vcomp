@@ -212,9 +212,11 @@ func Tools() []Tool {
 	limit := object{"type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum entries or lines; default 20."}
 	topic := textField("Exact topic folder name returned by inbox_list.")
 	makeTool := func(name, description string, props object, readOnly bool, required ...string) Tool {
-		return Tool{name, description, schema(props, required...), object{"readOnlyHint": readOnly, "destructiveHint": name == "inbox_remove", "idempotentHint": readOnly, "openWorldHint": false}}
+		return Tool{name, description, schema(props, required...), object{"readOnlyHint": readOnly, "destructiveHint": name == "inbox_remove" || name == "product_publish", "idempotentHint": readOnly, "openWorldHint": false}}
 	}
 	return []Tool{
+		makeTool("product_work", "Get or create your reusable product working copy. Refreshes it only when there is no unpublished work. Edit there; colleagues can inspect it, but public tests use the published product.", object{}, false),
+		makeTool("product_publish", "Save all nonignored changes in your product working copy and merge into the shared product. No approval or test gate. On conflicts, preserve the contribution and return paths to resolve; nothing conflicted is published.", object{"summary": textField("Short, honest single-line description of this contribution.")}, false, "summary"),
 		makeTool("company_overview", "Compact company paths, roster and dashboard observations. Live means a running process, not proof of useful work. Paginated employees; no message bodies or source code.", object{"offset": offset, "limit": limit}, true),
 		makeTool("role_read", "Read existing role, company conventions, notes or personal goals in bounded pages. These are the same files accessible through ordinary tools.", object{"role": role, "document": object{"type": "string", "enum": []string{"role", "conventions", "notes", "goals"}}, "offset": offset, "limit": limit}, true, "document"),
 		makeTool("inbox_list", "List existing inbox topics with short previews and modification times. Listing or reading never removes a message.", object{"role": role, "offset": offset, "limit": limit}, true),
@@ -225,8 +227,8 @@ func Tools() []Tool {
 }
 
 type arguments struct {
-	Role, Document, Topic, Recipient, Subject, Body string
-	Offset, Limit                                   int
+	Role, Document, Topic, Recipient, Subject, Body, Summary string
+	Offset, Limit                                            int
 }
 
 func parseArgs(name string, raw json.RawMessage) (arguments, error) {

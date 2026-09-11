@@ -16,13 +16,14 @@ company_root/
       notes.md            their internal monologue, by convention
       goals.md            what they are personally trying to achieve
       inbox/<topic>/message.md
+      product/            reusable employee worktree, created on demand
     developer-1/ art-director/ tester/ hr/ …
   product/                the artifact under construction — a git repo
   public/                 user-test runs
     run-0001/
       role.md             written by the engine: the throwaway user
       instructions.md     optional, from whoever asked for the test
-      product/            snapshot of product/ at run start, without .git
+      product/            committed product revision at run start, without .git
       version.txt         the commit the snapshot came from
       impressions.md      written by the user; its existence ends the run
   .vcomp/
@@ -80,3 +81,35 @@ whoever set the goal. The engine then closes every session and prints the file.
 Declaring the goal *met* is not the same as judging the product good: the CEO is
 required to base it on what the tester, the art director, and the public runs
 actually showed.
+
+## Product working copies
+
+Employees contribute through one reusable Git worktree at
+`spaces/<name>/product/`, created by the optional `product_work` MCP tool or
+`vcomp product-work NAME -root DIR`. Repeating it fast-forwards a clean copy only
+when it has no unpublished commits. Dirty, divergent and conflicted work stays
+intact. Employee inboxes, notes and role documents remain outside the worktree.
+
+`product_publish(summary)` or `vcomp product-publish NAME -root DIR -summary
+"what changed"` saves all nonignored changes in that employee's copy, merges the
+latest published revision into it, and fast-forwards the shared `product/`.
+Existing private commits are included. Only this brief publication operation is
+serialized across employees; busy calls can retry. Editing holds no lock.
+
+Publication adds no approval or test gate. On a Git conflict, the shared product
+stays unchanged and both histories remain available in the employee's copy.
+Resolve the listed paths there, stage them with `git add`, then publish again.
+Direct dirty edits to the shared product block publication rather than being
+reset or stashed away. Ordinary Git use and reading other working copies remain
+possible; this is a cooperative convention, not a sandbox.
+
+Public tests export one committed shared revision, recording its full hash and
+subject in `version.txt`. They exclude unpublished work, untracked build output,
+and later publications. Existing test snapshots are retained on retry. Snapshot
+export uses `git archive` and `tar`.
+
+New installations receive the working-copy instructions in `conventions.md` and
+`role_position.md`. Existing template overrides take precedence; update their
+product paragraphs when adopting this workflow. The CEO's and other roles'
+responsibilities remain unchanged. Reset removes the working copies together
+with the employee spaces and shared repository.

@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"vcomp/internal/config"
 	"vcomp/internal/engine"
 	"vcomp/internal/mcp"
+	"vcomp/internal/product"
 	"vcomp/internal/space"
 	"vcomp/internal/tmux"
 	"vcomp/internal/tui"
@@ -35,6 +37,8 @@ const usage = `vcomp - a virtual company of AI agents
   vcomp message  NAME [-root DIR] -subject "..." [-text "..."] [-file FILE]
   vcomp steer    NAME [-root DIR] [-text "..."] [-file FILE]
   vcomp direct-steer NAME | -all [-root DIR] [-mode queued|immediate] [-text "..."] [-file FILE]
+  vcomp product-work NAME [-root DIR]
+  vcomp product-publish NAME [-root DIR] -summary "..."
   vcomp mcp      -root DIR -role NAME   serve optional company tools over stdio
   vcomp status   [-root DIR]
   vcomp reset    [-root DIR] [-y]       start over, keeping the settings
@@ -90,6 +94,8 @@ func main() {
 			err = cmdSteer(args)
 		case "direct-steer":
 			err = cmdDirectSteer(args)
+		case "product-work", "product-publish":
+			err = cmdProduct(cmd, args)
 		case "mcp":
 			err = cmdMCP(args)
 		case "status":
@@ -712,4 +718,24 @@ func cmdMCP(args []string) error {
 		return err
 	}
 	return server.Serve(os.Stdin, os.Stdout)
+}
+
+func cmdProduct(command string, args []string) error {
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
+	root := fs.String("root", ".", "company root")
+	summary := fs.String("summary", "", "contribution summary")
+	role, err := nameAndFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	var result product.Result
+	if command == "product-work" {
+		result, err = product.Work(*root, role)
+	} else {
+		result, err = product.Publish(*root, role, *summary)
+	}
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(result)
 }
