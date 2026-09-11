@@ -123,33 +123,77 @@ func loadData(root string) data {
 	}
 	return d
 }
-func settingsForm(root string) (*form, error) {
-	c, err := config.Load(root)
-	if err != nil {
-		return nil, err
+
+// durationSteps is the ladder Left/Right walk for interval fields.
+var durationSteps = []string{"500ms", "1s", "2s", "3s", "5s", "10s", "15s", "20s", "30s", "45s", "1m", "2m", "5m", "10m"}
+
+func durationOptions() []option {
+	out := []option{}
+	for _, s := range durationSteps {
+		out = append(out, option{Value: s})
 	}
+	return out
+}
+func harnessOptions(c config.Config, inherit string) []option {
 	names := []string{}
 	for name := range c.Harnesses {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	h := c.Harnesses[c.Harness]
-	f := &form{Kind: "save-settings", Title: "Company setup / common settings", Fields: []field{
-		{Label: "Goal (or use Goal file)", Value: c.Goal},
-		{Label: "Goal file (relative to company or absolute)", Value: c.GoalFile},
-		{Label: "Initial roster (existing employees are kept)", Value: strings.Join(c.Roster, ", ")},
-		{Label: "Default harness", Value: c.Harness, Choices: names},
-		{Label: "Default model (for the selected harness)", Value: h.Model},
-		{Label: "Thinking effort (for the selected harness)", Value: h.Effort},
-		{Label: "Engine tick", Value: c.Tick.String()},
-		{Label: "Dashboard refresh", Value: c.TUIRefresh.String()},
-		{Label: "Session prefix", Value: c.SessionPrefix},
-		{Label: "CEO instructions file", Value: c.CEOInstructionsFile},
-	}}
-	if c.GoalFile != "" {
-		f.Fields[0].Value = ""
+	out := []option{}
+	if inherit != "" {
+		out = append(out, option{Value: "", Title: inherit})
 	}
-	return f, nil
+	for _, name := range names {
+		out = append(out, option{Value: name})
+	}
+	return out
+}
+func valueOptions(values []string, empty string) []option {
+	out := []option{{Value: "", Title: empty}}
+	for _, v := range values {
+		out = append(out, option{Value: v})
+	}
+	return out
+}
+func positionOptions(positions []bootstrap.Position) []option {
+	out := []option{}
+	for _, p := range positions {
+		out = append(out, option{Value: p.Name, Title: p.Title + " · " + p.Sector})
+	}
+	return out
+}
+func settingsForm(root string) (*form, error) {
+	c, err := config.Load(root)
+	if err != nil {
+		return nil, err
+	}
+	h := c.Harnesses[c.Harness]
+	fields := []field{
+		{Label: "Goal", Value: c.Goal, Empty: "required unless a goal file is set"},
+		{Label: "Goal file", Value: c.GoalFile, Kind: kindFile, Base: root, Empty: "none; relative to the company or absolute"},
+		{Label: "Initial roster", Value: strings.Join(c.Roster, ", "), Kind: kindMulti, Options: positionOptions(bootstrap.Load(root).Positions()), Empty: "none"},
+		{Label: "Default harness", Value: c.Harness, Kind: kindChoice, Options: harnessOptions(c, "")},
+		{Label: "Model", Value: h.Model, Kind: kindChoice, Options: valueOptions(h.Models, "harness default")},
+		{Label: "Thinking effort", Value: h.Effort, Kind: kindChoice, Options: valueOptions(h.Efforts, "harness default")},
+		{Label: "Engine tick", Value: c.Tick.String(), Kind: kindDuration, Options: durationOptions()},
+		{Label: "Dashboard refresh", Value: c.TUIRefresh.String(), Kind: kindDuration, Options: durationOptions()},
+		{Label: "Session prefix", Value: c.SessionPrefix},
+		{Label: "CEO instructions file", Value: c.CEOInstructionsFile, Kind: kindFile, Base: root, Empty: "none"},
+	}
+	if c.GoalFile != "" {
+		fields[0].Value = ""
+	}
+	// Model and effort belong to the selected harness; switching it swaps them.
+	changed := func(f *form, i int) {
+		if i != 3 {
+			return
+		}
+		h := c.Harnesses[f.Fields[3].Value]
+		f.Fields[4].Value, f.Fields[4].Options = h.Model, valueOptions(h.Models, "harness default")
+		f.Fields[5].Value, f.Fields[5].Options = h.Effort, valueOptions(h.Efforts, "harness default")
+	}
+	return newForm("save-settings", "Company settings", fields, changed), nil
 }
 func saveSettings(root string, values []string) error {
 	if len(values) != 10 {
@@ -259,22 +303,84 @@ func roleSettingsForm(root, name string) (*form, error) {
 		return nil, err
 	}
 	r := cfg.Roles[name]
-	choices := []string{""}
-	for name := range cfg.Harnesses {
-		choices = append(choices, name)
-	}
-	sort.Strings(choices)
 	num := func(n int) string {
 		if n == 0 {
 			return ""
 		}
 		return fmt.Sprint(n)
 	}
-	return &form{Kind: "role-settings", Title: name + " / settings (empty inherits)", Fields: []field{
-		{Label: "Employee", Value: name}, {Label: "Harness", Value: r.Harness, Choices: choices},
-		{Label: "Model", Value: r.Model}, {Label: "Thinking effort", Value: r.Effort},
-		{Label: "Idle ticks with inbox", Value: num(r.IdleTicks)}, {Label: "Idle ticks with empty inbox", Value: num(r.IdleTicksEmpty)},
-	}}, nil
+	suggestions := func(harness string) (models, efforts []option) {
+		h := cfg.Harnesses[firstNonEmpty(harness, cfg.Harness)]
+		return valueOptions(h.Models, "inherit"), valueOptions(h.Efforts, "inherit")
+	}
+	models, efforts := suggestions(r.Harness)
+	fields := []field{
+		{Label: "Employee", Value: name, Kind: kindStatic},
+		{Label: "Harness", Value: r.Harness, Kind: kindChoice, Options: harnessOptions(cfg, "inherit "+cfg.Harness)},
+		{Label: "Model", Value: r.Model, Kind: kindChoice, Options: models},
+		{Label: "Thinking effort", Value: r.Effort, Kind: kindChoice, Options: efforts},
+		{Label: "Idle ticks with inbox", Value: num(r.IdleTicks), Kind: kindNumber, Empty: fmt.Sprintf("inherit %d", cfg.IdleTicks)},
+		{Label: "Idle ticks with empty inbox", Value: num(r.IdleTicksEmpty), Kind: kindNumber, Empty: fmt.Sprintf("inherit %d", cfg.IdleTicksEmpty)},
+	}
+	changed := func(f *form, i int) {
+		if i == 1 {
+			f.Fields[2].Options, f.Fields[3].Options = suggestions(f.Fields[1].Value)
+		}
+	}
+	return newForm("role-settings", name+" · settings", fields, changed), nil
+}
+func firstNonEmpty(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// hireForm suggests the next free name for the profession, and follows the
+// profession until the name is edited by hand.
+func hireForm(positions []bootstrap.Position, agents []engine.AgentView, position, name string) *form {
+	taken := map[string]bool{}
+	for _, a := range agents {
+		taken[a.Name] = true
+	}
+	suggest := func(position string) string {
+		if !taken[position] {
+			return position
+		}
+		for n := 2; ; n++ {
+			if s := fmt.Sprintf("%s-%d", position, n); !taken[s] {
+				return s
+			}
+		}
+	}
+	options := []option{}
+	for _, p := range positions {
+		if p.Name != "ceo" {
+			options = append(options, option{Value: p.Name, Title: p.Title})
+		}
+	}
+	auto := name == ""
+	if auto {
+		name = suggest(position)
+	}
+	fields := []field{
+		{Label: "Name", Value: name},
+		{Label: "Profession", Value: position, Kind: kindChoice, Options: options},
+		{Label: "Backstory", Empty: "optional; drawn from the pool"},
+	}
+	changed := func(f *form, i int) {
+		switch i {
+		case 0:
+			auto = false
+		case 1:
+			if auto {
+				f.Fields[0].Value = suggest(f.Fields[1].Value)
+			}
+		}
+	}
+	return newForm("hire", "Hire an employee", fields, changed)
 }
 func saveRoleSettings(root string, values []string) error {
 	if len(values) != 6 {

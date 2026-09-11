@@ -2,7 +2,6 @@ package tui
 
 import (
 	"path/filepath"
-	"unicode/utf8"
 
 	"vcomp/internal/bootstrap"
 	"vcomp/internal/engine"
@@ -17,16 +16,6 @@ type data struct {
 	AgentDocs                                  map[string][]string
 	RunDocs                                    map[string]string
 	Positions                                  []bootstrap.Position
-}
-type field struct {
-	Label, Value string
-	Choices      []string
-}
-type form struct {
-	Kind, Title      string
-	Fields           []field
-	Selected, Cursor int
-	Editing          bool
 }
 type action struct {
 	Kind   string
@@ -43,6 +32,7 @@ type model struct {
 	Message                       string
 	Busy, OwnEngine, Follow       bool
 	W, H                          int
+	CursorX, CursorY              int // terminal cursor while typing; -1 hides it
 }
 
 func (m *model) count() int {
@@ -109,6 +99,7 @@ func (m *model) key(k key) *action {
 	if m.Busy {
 		return nil
 	}
+	m.Message = "" // a message lives until the next key
 	if m.Confirm != nil {
 		if k.Text == "y" || k.Text == "Y" {
 			a := m.Confirm
@@ -117,7 +108,6 @@ func (m *model) key(k key) *action {
 		}
 		if k.Text == "n" || k.Name == "esc" {
 			m.Confirm = nil
-			m.Message = "Cancelled."
 		}
 		return nil
 	}
@@ -255,106 +245,13 @@ func (m *model) key(k key) *action {
 	case "c":
 		return &action{Kind: "settings-form"}
 	case "o":
-		m.Form = &form{Kind: "open", Title: "Open a company", Fields: []field{{Label: "Company directory", Value: m.Root}}}
+		m.Form = newForm("open", "Open a company", []field{{Label: "Company directory", Value: m.Root, Kind: kindDir}}, nil)
 	case "e":
 		return &action{Kind: "editor"}
 	case "a":
 		if m.Screen == 0 && m.agent() != "" {
 			return &action{Kind: "attach", Values: []string{m.Data.View.Agents[m.Selected].Session}}
 		}
-	}
-	return nil
-}
-func (m *model) formKey(k key) *action {
-	f := m.Form
-	if k.Name == "esc" {
-		if f.Editing {
-			f.Editing = false
-		} else {
-			m.Form = nil
-		}
-		return nil
-	}
-	if k.Name == "save" {
-		values := []string{}
-		for _, v := range f.Fields {
-			values = append(values, v.Value)
-		}
-		return &action{Kind: f.Kind, Values: values}
-	}
-	if k.Name == "tab" || k.Name == "backtab" {
-		step := 1
-		if k.Name == "backtab" {
-			step = -1
-		}
-		f.Selected = (f.Selected + step + len(f.Fields)) % len(f.Fields)
-		f.Editing = false
-		return nil
-	}
-	v := &f.Fields[f.Selected]
-	if k.Name == "enter" {
-		f.Editing = !f.Editing
-		f.Cursor = utf8.RuneCountInString(v.Value)
-		return nil
-	}
-	if !f.Editing {
-		if k.Name == "up" {
-			f.Selected = max(0, f.Selected-1)
-		}
-		if k.Name == "down" {
-			f.Selected = min(len(f.Fields)-1, f.Selected+1)
-		}
-		if (k.Name == "left" || k.Name == "right") && len(v.Choices) > 0 {
-			i := 0
-			for n, s := range v.Choices {
-				if s == v.Value {
-					i = n
-				}
-			}
-			step := 1
-			if k.Name == "left" {
-				step = -1
-			}
-			v.Value = v.Choices[(i+step+len(v.Choices))%len(v.Choices)]
-		}
-		if k.Text != "" || k.Name == "paste" {
-			f.Editing = true
-			f.Cursor = utf8.RuneCountInString(v.Value)
-		} else {
-			return nil
-		}
-	}
-	rs := []rune(v.Value)
-	f.Cursor = max(0, min(f.Cursor, len(rs)))
-	switch k.Name {
-	case "left":
-		f.Cursor = max(0, f.Cursor-1)
-	case "right":
-		f.Cursor = min(len(rs), f.Cursor+1)
-	case "home":
-		f.Cursor = 0
-	case "end":
-		f.Cursor = len(rs)
-	case "clear":
-		v.Value = ""
-		f.Cursor = 0
-	case "backspace":
-		if f.Cursor > 0 {
-			v.Value = string(append(rs[:f.Cursor-1], rs[f.Cursor:]...))
-			f.Cursor--
-		}
-	case "delete":
-		if f.Cursor < len(rs) {
-			v.Value = string(append(rs[:f.Cursor], rs[f.Cursor+1:]...))
-		}
-	}
-	if k.Text != "" {
-		txt := []rune(k.Text)
-		next := append([]rune{}, rs[:f.Cursor]...)
-		next = append(next, txt...)
-		next = append(next, rs[f.Cursor:]...)
-		v.Value = string(next)
-		f.Cursor += len(txt)
 	}
 	return nil
 }
@@ -451,12 +348,20 @@ SELECTED EMPLOYEE
 FILES AND FORMS
  e   Open the settings file, goal, or selected document in $EDITOR
      The default editor is vi. Generated role.md is read-only here.
- Tab / Shift-Tab   Change field
- Enter            Edit field / finish editing
- Left/Right       Cycle choices, or move the text cursor
+ Tab / Shift-Tab   Next / previous field (Up/Down also work)
+ Enter            Text: edit in place. Choices, paths, intervals: open a chooser
+ Left/Right       Cycle a choice, step a number or interval, or move the cursor
  Ctrl-U           Clear the field being edited
  Ctrl-S           Validate and save the form
- Esc              Finish editing / cancel form
+ Esc              Finish editing / close a chooser / cancel the form
+
+CHOOSERS
+ Typing filters the list; the typed text is also offered as a value of its
+ own after the matches, so anything the settings accept can still be entered.
+ Up/Down or PageUp/PageDown move, Enter chooses, Esc goes back.
+ Rosters: Space toggles an entry, Enter keeps the marked set.
+ Paths: Enter opens a folder or picks a file; Backspace goes to the parent.
+ Paths inside the company are stored relative to it.
 
 EXIT
 q   Leave the TUI. If it started a supervisor, confirmation explains

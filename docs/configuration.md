@@ -34,6 +34,10 @@ idle_ticks_empty = 20
 nudge = Stop writing plans. Go ask someone a hard question and demand evidence.
 ```
 
+Each harness section may also list `models` and `efforts`: comma-separated
+suggestions the terminal interface offers in its choosers. They restrict
+nothing; any value can still be typed.
+
 For the shipped CLI presets and local endpoint examples, see
 [CLI harnesses and local models](harnesses.md).
 

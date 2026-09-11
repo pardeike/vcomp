@@ -96,8 +96,13 @@ func TestTUIWorkflowInRealTerminal(t *testing.T) {
 	}
 	wait("initial dashboard", func() bool { return has("Dashboard") && has("developer") })
 	keys("h")
-	wait("hire form", func() bool { return has("Hire an employee") })
+	wait("hire form suggests the next free name", func() bool { return has("Hire an employee") && has("developer-2") })
+	keys("Down", "Right") // the name follows the profession until typed over
+	wait("suggested name follows profession", func() bool { return has("Hire an employee") && !has("developer-2") })
 	keys("Enter")
+	typeText("dev")
+	wait("profession chooser filters", func() bool { return has("filter dev") })
+	keys("Enter", "Up", "Enter", "C-u")
 	typeText("developer-2")
 	keys("C-s")
 	wait("hire", func() bool {
@@ -106,8 +111,8 @@ func TestTUIWorkflowInRealTerminal(t *testing.T) {
 	})
 	wait("saved hire", func() bool { return has("hired developer-2") && has("   developer-2") })
 	keys("End", "t")
-	wait("steer form", func() bool { return has("Steer an employee") })
-	keys("Tab", "Enter")
+	wait("steer form", func() bool { return has("Steer developer-2") })
+	keys("Enter") // the employee line is fixed; the first editable field is selected
 	typeText("Focus on the controls.")
 	keys("C-s")
 	wait("steering", func() bool {

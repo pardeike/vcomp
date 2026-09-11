@@ -246,3 +246,168 @@ func TestDocumentHomeKeepsEmployeeAndStopsFollowing(t *testing.T) {
 		t.Fatal("Home was overridden by log following")
 	}
 }
+
+func TestChoosersReplaceTypedInput(t *testing.T) {
+	m := fixture()
+	m.Form = newForm("hire", "Hire", []field{
+		{Label: "Employee", Value: "ceo", Kind: kindStatic},
+		{Label: "Profession", Value: "developer", Kind: kindChoice, Options: []option{{Value: "designer", Title: "Designer"}, {Value: "developer", Title: "Developer"}, {Value: "tester", Title: "Tester"}}},
+		{Label: "Ticks", Kind: kindNumber},
+		{Label: "Tick", Value: "20s", Kind: kindDuration, Options: durationOptions()},
+		{Label: "Roster", Value: "ceo, developer", Kind: kindMulti, Options: []option{{Value: "ceo"}, {Value: "designer"}, {Value: "developer"}}},
+	}, nil)
+	f := m.Form
+	if f.Selected != 1 {
+		t.Fatal("a fixed field was selected")
+	}
+	m.key(key{Name: "backtab"})
+	if f.Selected != 4 {
+		t.Fatal("Shift-Tab did not wrap past the fixed field")
+	}
+	m.key(key{Name: "tab"})
+	m.key(key{Name: "right"})
+	if f.Fields[1].Value != "tester" {
+		t.Fatal(f.Fields[1].Value)
+	}
+	m.key(key{Text: "d"})
+	if f.Picker == nil || f.Picker.Filter != "d" {
+		t.Fatal("typing on a choice did not open a filtered chooser")
+	}
+	m.key(key{Text: "x"})
+	items := f.Picker.visible(f.Fields[1])
+	if len(items) != 1 || items[0].Value != "dx" || items[0].Title != "use this value" {
+		t.Fatalf("typed value not offered: %+v", items)
+	}
+	m.key(key{Name: "backspace"})
+	m.key(key{Name: "down"})
+	m.key(key{Name: "enter"})
+	if f.Picker != nil || f.Fields[1].Value != "developer" {
+		t.Fatalf("chooser did not pick the filtered item: %+v", f.Fields[1].Value)
+	}
+	m.key(key{Name: "tab"})
+	m.key(key{Name: "right"})
+	m.key(key{Name: "right"})
+	m.key(key{Name: "left"})
+	if f.Fields[2].Value != "1" {
+		t.Fatal(f.Fields[2].Value)
+	}
+	m.key(key{Name: "left"})
+	if f.Fields[2].Value != "" {
+		t.Fatal("zero should read as inherit")
+	}
+	m.key(key{Text: "a"})
+	m.key(key{Text: "7"})
+	if f.Fields[2].Value != "7" {
+		t.Fatal("number field accepted letters")
+	}
+	m.key(key{Name: "esc"})
+	m.key(key{Name: "tab"})
+	m.key(key{Name: "right"})
+	if f.Fields[3].Value != "30s" {
+		t.Fatal(f.Fields[3].Value)
+	}
+	m.key(key{Name: "tab"})
+	m.key(key{Name: "enter"})
+	p := f.Picker
+	if p == nil || !p.Checked["ceo"] || p.Checked["designer"] {
+		t.Fatal("roster chooser lost its marks")
+	}
+	m.key(key{Name: "down"})
+	m.key(key{Text: " "})
+	m.key(key{Name: "enter"})
+	if f.Fields[4].Value != "ceo, developer, designer" {
+		t.Fatalf("roster order changed: %q", f.Fields[4].Value)
+	}
+	for _, size := range [][2]int{{120, 30}, {40, 12}} {
+		m.key(key{Name: "enter"})
+		for _, r := range m.render(size[0], size[1]) {
+			if width(r.Text) > size[0] {
+				t.Fatalf("chooser overflow at %v: %q", size, r.Text)
+			}
+		}
+		m.key(key{Name: "esc"})
+	}
+}
+
+func TestPathChooserBrowsesAndStoresCompanyRelativePaths(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "goal.md"), []byte("goal"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := fixture()
+	m.Form = newForm("save-settings", "Settings", []field{{Label: "Goal file", Kind: kindFile, Base: root}}, nil)
+	m.key(key{Name: "enter"})
+	p := m.Form.Picker
+	if p == nil || p.Dir != root {
+		t.Fatalf("browser did not start at the company: %+v", p)
+	}
+	m.key(key{Text: "doc"})
+	m.key(key{Name: "enter"})
+	if p.Dir != filepath.Join(root, "docs") || p.Filter != "" {
+		t.Fatalf("Enter did not open the folder: %+v", p)
+	}
+	m.key(key{Name: "backspace"})
+	if p.Dir != root {
+		t.Fatal("Backspace did not go to the parent")
+	}
+	m.key(key{Text: "docs"})
+	m.key(key{Name: "enter"})
+	m.key(key{Text: "goal"})
+	m.key(key{Name: "enter"})
+	if m.Form.Picker != nil || m.Form.Fields[0].Value != filepath.Join("docs", "goal.md") {
+		t.Fatalf("file not stored relative to the company: %q", m.Form.Fields[0].Value)
+	}
+	if got := absolute(m.Form.Fields[0].Value, root); got != filepath.Join(root, "docs", "goal.md") {
+		t.Fatal(got)
+	}
+}
+
+func TestSettingsFormSwapsModelChoicesWithHarness(t *testing.T) {
+	t.Setenv(config.HomeEnv, t.TempDir())
+	root := t.TempDir()
+	if err := config.UpdateLocal(root, []config.Override{{Section: "harness codex", Key: "model", Value: "gpt-5.1-codex-max"}}); err != nil {
+		t.Fatal(err)
+	}
+	f, err := settingsForm(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Fields[3].Value != "claude" || len(f.Fields[4].Options) < 2 {
+		t.Fatalf("no model suggestions for the default harness: %+v", f.Fields[4])
+	}
+	m := fixture()
+	m.Form = f
+	f.Selected = 3
+	m.key(key{Text: "cod"})
+	m.key(key{Name: "enter"})
+	if f.Fields[3].Value != "codex" || f.Fields[4].Value != "gpt-5.1-codex-max" {
+		t.Fatalf("model did not follow the harness: %+v", f.Fields[4])
+	}
+	if _, ok := f.Fields[5].option("high"); !ok {
+		t.Fatal("effort suggestions missing")
+	}
+}
+
+func TestEditingCursorFollowsTheField(t *testing.T) {
+	m := fixture()
+	m.Form = newForm("test", "Test", []field{{Label: "Text", Value: strings.Repeat("x", 200)}}, nil)
+	m.key(key{Name: "enter"})
+	m.key(key{Name: "home"})
+	m.render(80, 24)
+	if m.CursorX != 5+4 || m.CursorY != 5 {
+		t.Fatalf("cursor at %d,%d", m.CursorX, m.CursorY)
+	}
+	m.key(key{Name: "end"})
+	m.render(80, 24)
+	if m.CursorX < 40 || m.CursorX >= 80 {
+		t.Fatalf("scrolled cursor at %d", m.CursorX)
+	}
+	m.key(key{Name: "esc"})
+	m.render(80, 24)
+	if m.CursorX != -1 {
+		t.Fatal("cursor shown while not editing")
+	}
+}

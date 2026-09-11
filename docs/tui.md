@@ -25,11 +25,36 @@ The main screens are:
 - **Role catalogue:** available professions, with a hire form.
 
 Tab cycles screens; number keys select them directly. Arrows or j/k move through
-lists, Enter drills down, Escape returns, and ? shows keyboard help. Forms use
-Tab/Shift-Tab to change fields, Enter to edit, and Ctrl-S to submit. Errors stay
-visible and keep the entered values. Stop and reset require confirmation; reset
-shows the company root and the paths that will be removed. No action targets all
-companies implicitly.
+lists, Enter drills down, Escape returns, and ? shows keyboard help. The header
+carries the company name, engine status, and the age of the last observation;
+the footer lists the keys that apply to the current screen, form, or chooser.
+Errors stay visible with the entered values until the next key. Stop and reset
+require confirmation; reset shows the company root and the paths that will be
+removed. No action targets all companies implicitly.
+
+Forms show one aligned row per field with a hint for the selected one. Fields
+are typed, and only free prose is typed in: choices, rosters, paths, numbers,
+and intervals use choosers.
+
+- **Choice** (harness, model, effort, profession): Left/Right cycles, Enter
+  opens a filtered list, and typing opens it already filtered. The typed text
+  is also offered as a value of its own, so a model the harness knows but the
+  list does not can still be entered. Model and effort suggestions come from
+  the `models` and `efforts` keys of the selected harness section and swap
+  when the harness changes.
+- **Roster**: a checklist of the profession catalogue; Space toggles, Enter
+  keeps the marked set in the roster's existing order.
+- **Path** (goal file, CEO instructions, steering or test instruction files,
+  company directory): a folder browser starting at the company. Enter opens a
+  folder or picks a file, Backspace goes to the parent, typing filters. Files
+  inside the company are stored relative to it. A path can still be typed.
+- **Number** (idle ticks): Left/Right steps, digits type; empty inherits.
+- **Interval** (tick, refresh): Left/Right walks a ladder from 500ms to 10m,
+  Enter opens it as a list, and a duration can be typed.
+
+The hire form suggests the next free name for the profession and follows the
+profession until the name is edited. Fixed fields, such as which employee a
+form is about, are shown but never selected.
 
 At 120 columns and above the dashboard puts the selected agent's output beside
 the roster. At ordinary 80-column widths it uses a compact roster and preview
@@ -49,8 +74,8 @@ the existing foreground command behavior; the exit confirmation explains this.
 
 The implementation uses the Go standard library, terminal escape sequences, and
 `stty` on Unix. It restores terminal state on normal exit and handled signals.
-Tests cover navigation, responsive layout, forms, read-only observation, and
-terminal lifecycle. Real tmux fixtures exercise interaction without model calls.
+Tests cover navigation, responsive layout, forms, choosers, read-only
+observation, and terminal lifecycle. Real tmux fixtures exercise interaction without model calls.
 
 ## Keys and commands
 
@@ -85,7 +110,9 @@ untracked files.
 Automated tests cover screen bounds at 160x48, 120x30, 80x24, 60x18, 40x12, and
 smaller sizes; Unicode width and terminal-control filtering; navigation and
 forms; invalid setup without writes; file-based goals; read-only observation;
-and stale engine locks. The CLI integration test uses real tmux to hire, steer,
+and stale engine locks. Chooser tests cover filtered choice, typed values,
+number and interval stepping, roster toggling, and the path browser. The CLI
+integration test uses real tmux to hire through the profession chooser, steer,
 create a public test, resize, visit an editor, cancel reset, leave an owned
 supervisor, and verify terminal restoration while agents survive.
 

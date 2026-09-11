@@ -67,7 +67,13 @@ func Run(root string, opt Options) error {
 	initial := true
 	for {
 		w, h := a.t.Size()
-		fmt.Fprint(os.Stdout, draw(a.m.render(w, h), os.Getenv("NO_COLOR") == ""))
+		frame := draw(a.m.render(w, h), os.Getenv("NO_COLOR") == "")
+		if a.m.CursorX >= 0 && a.m.CursorY >= 0 {
+			frame += fmt.Sprintf("\x1b[%d;%dH\x1b[?25h", a.m.CursorY+1, a.m.CursorX+1)
+		} else {
+			frame += "\x1b[?25l"
+		}
+		fmt.Fprint(os.Stdout, frame)
 		select {
 		case sig := <-signals:
 			if sig != syscall.SIGWINCH {
@@ -260,12 +266,6 @@ func (a *app) dispatch(act action) (bool, error) {
 			return "Employee settings saved; running conversations continue until their next restart.", saveRoleSettings(root, act.Values)
 		})
 	case "hire-form":
-		names := []string{}
-		for _, p := range a.m.Data.Positions {
-			if p.Name != "ceo" {
-				names = append(names, p.Name)
-			}
-		}
 		position := "developer"
 		if a.m.Screen == 6 && a.m.Selected < len(a.m.Data.Positions) {
 			position = a.m.Data.Positions[a.m.Selected].Name
@@ -274,19 +274,19 @@ func (a *app) dispatch(act action) (bool, error) {
 		if len(act.Values) > 0 {
 			name = act.Values[0]
 		}
-		a.m.Form = &form{Kind: "hire", Title: "Hire an employee", Fields: []field{{Label: "Name", Value: name}, {Label: "Profession", Value: position, Choices: names}, {Label: "Backstory (optional)"}}}
+		a.m.Form = hireForm(a.m.Data.Positions, a.m.Data.View.Agents, position, name)
 	case "replace-form":
 		name := act.Values[0]
 		if name == "ceo" {
 			return false, fmt.Errorf("the CEO's identity is user-owned; edit its template or instructions in Settings")
 		}
-		a.m.Form = &form{Kind: "replace", Title: "Replace " + name + " (fresh conversation)", Fields: []field{{Label: "Employee", Value: name}, {Label: "New backstory"}}}
+		a.m.Form = newForm("replace", "Replace "+name, []field{{Label: "Employee", Value: name, Kind: kindStatic}, {Label: "New backstory", Empty: "optional; drawn from the pool"}}, nil)
 	case "steer-form":
 		name := act.Values[0]
 		if name == "ceo" {
 			return false, fmt.Errorf("use CEO instructions file in Settings for the CEO")
 		}
-		a.m.Form = &form{Kind: "steer", Title: "Steer an employee", Fields: []field{{Label: "Employee", Value: name}, {Label: "Steering text (empty clears it)"}, {Label: "Or read from file"}}}
+		a.m.Form = newForm("steer", "Steer "+name, []field{{Label: "Employee", Value: name, Kind: kindStatic}, {Label: "Steering text", Empty: "empty clears the current steering"}, {Label: "Or read from file", Kind: kindFile, Base: root, Empty: "none"}}, nil)
 	case "hire":
 		a.work(act.Kind, func() (string, error) {
 			return command(root, "hire", act.Values[0], "-position", act.Values[1], "-backstory", act.Values[2])
@@ -305,12 +305,12 @@ func (a *app) dispatch(act action) (bool, error) {
 		a.work(act.Kind, func() (string, error) {
 			args := []string{"steer", act.Values[0], "-text", act.Values[1]}
 			if act.Values[2] != "" {
-				args = append(args, "-file", act.Values[2])
+				args = append(args, "-file", absolute(act.Values[2], root))
 			}
 			return command(root, args...)
 		})
 	case "test-form":
-		a.m.Form = &form{Kind: "test", Title: "Create a public user test", Fields: []field{{Label: "Instructions (optional)"}, {Label: "Or instructions file"}}}
+		a.m.Form = newForm("test", "Create a public user test", []field{{Label: "Instructions", Empty: "optional; the role template applies"}, {Label: "Or instructions file", Kind: kindFile, Base: root, Empty: "none"}}, nil)
 	case "test":
 		a.work(act.Kind, func() (string, error) {
 			if !bootstrap.Exists(root) {
@@ -318,7 +318,7 @@ func (a *app) dispatch(act action) (bool, error) {
 			}
 			args := []string{"user-run", "-text", act.Values[0]}
 			if act.Values[1] != "" {
-				args = append(args, "-instructions", act.Values[1])
+				args = append(args, "-instructions", absolute(act.Values[1], root))
 			}
 			return command(root, args...)
 		})

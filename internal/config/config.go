@@ -61,6 +61,10 @@ type Harness struct {
 	Resume []string
 	Model  string
 	Effort string
+	// Models and Efforts are the values the interface offers in its choosers;
+	// they are suggestions only, and any other value can still be typed.
+	Models  []string
+	Efforts []string
 	// Handshake is tmux key names sent once after the session comes up, before
 	// the first prompt - for whatever a harness asks before it will talk.
 	Handshake []string
@@ -240,6 +244,10 @@ func (c *Config) set(kind, name, key, value string) error {
 			h.Model = value
 		case "effort":
 			h.Effort = value
+		case "models":
+			h.Models = list(value)
+		case "efforts":
+			h.Efforts = list(value)
 		case "handshake":
 			h.Handshake = strings.Fields(value)
 		default:
@@ -337,12 +345,7 @@ func (c *Config) setTop(key, value string) error {
 	case "harness":
 		c.Harness = value
 	case "roster":
-		c.Roster = nil
-		for _, s := range strings.Split(value, ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				c.Roster = append(c.Roster, s)
-			}
-		}
+		c.Roster = list(value)
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
@@ -510,6 +513,17 @@ func substitute(t string, vals map[string]string) (string, bool) {
 		t = strings.ReplaceAll(t, ph, v)
 	}
 	return t, false
+}
+
+// list splits a comma-separated value, dropping blanks.
+func list(value string) []string {
+	var out []string
+	for _, s := range strings.Split(value, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func firstNonEmpty(vs ...string) string {
