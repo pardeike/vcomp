@@ -14,10 +14,12 @@ import (
 // TurnStats describes completed prompt-to-final-response turns in the active
 // OMP conversation. Tool calls are part of the turn, not additional turns.
 type TurnStats struct {
-	Known     bool
-	Completed int
-	Started   time.Time
-	Average   time.Duration
+	Activity, Detail string
+	Latest           time.Time
+	Known            bool
+	Completed        int
+	Started          time.Time
+	Average          time.Duration
 }
 
 // Cache unchanged transcripts by terminal breadcrumb so dashboard refreshes
@@ -105,6 +107,8 @@ func parseTurnStats(input io.Reader, cwd string) TurnStats {
 			Message   struct {
 				Role, StopReason string
 				Timestamp        int64
+				ToolName         string
+				Content          json.RawMessage
 			}
 		}
 		if json.Unmarshal(line, &entry) != nil {
@@ -118,6 +122,13 @@ func parseTurnStats(input io.Reader, cwd string) TurnStats {
 		}
 		if !stats.Known || entry.Type != "message" || entry.Timestamp.IsZero() {
 			continue
+		}
+		brief, detail := activityText(entry.Message.Role, entry.Message.ToolName, entry.Message.StopReason, entry.Message.Content)
+		if brief != "" {
+			stamp := entry.Timestamp.Local().Format("15:04:05")
+			stats.Activity = keepRecent(stamp + "  " + brief + "\n\n" + stats.Activity)
+			stats.Detail = keepRecent(stamp + "  " + detail + "\n\n" + stats.Detail)
+			stats.Latest = entry.Timestamp
 		}
 		switch entry.Message.Role {
 		case "user":

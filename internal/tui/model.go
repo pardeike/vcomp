@@ -178,6 +178,9 @@ func (m *model) key(k key) *action {
 		m.Scroll = 0
 		return nil
 	}
+	if m.Detail == "agent" && m.Sub == 2 && k.Text == "v" {
+		return &action{Kind: "terminal-verbosity"}
+	}
 	if m.Detail == "profession-draft" {
 		switch k.Text {
 		case "e":
@@ -358,7 +361,7 @@ func (m *model) key(k key) *action {
 		return &action{Kind: "editor"}
 	case "a":
 		if m.Screen == 0 && m.agent() != "" {
-			return &action{Kind: "attach", Values: []string{m.Data.View.Agents[m.Selected].Session}}
+			return &action{Kind: "intervene-confirm", Values: []string{m.Data.View.Agents[m.Selected].Session}}
 		}
 	}
 	return nil
@@ -397,6 +400,9 @@ func (m *model) document() string {
 		a := m.agent()
 		if m.Sub == 0 && len(m.Data.Inboxes[a]) > 0 {
 			return m.Data.Inboxes[a][m.inboxIndex()].Content
+		}
+		if m.Sub == 2 && m.Selected < len(m.Data.View.Agents) {
+			return terminalActivity(m.Data.View.Agents[m.Selected], m.Data.View.Config.TerminalView)
 		}
 		if docs := m.Data.AgentDocs[a]; len(docs) > m.Sub {
 			return docs[m.Sub]
@@ -489,7 +495,9 @@ n   Create a public user test
 
 SELECTED EMPLOYEE
  Left/Right or [ / ]   Previous/next request in the Inbox tab
- a   Watch its tmux session; detach with Ctrl-B then d
+ v   Cycle brief/detailed/raw Terminal view (saved for this company)
+ a   Intervene in its tmux session; keyboard input reaches the agent
+     Detach with Ctrl-B then d
      Inside tmux: Ctrl-B then L returns to the dashboard
  m   Send an inbox message FROM USER
  t   Edit CEO steering for this employee

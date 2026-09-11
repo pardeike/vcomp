@@ -91,6 +91,7 @@ type RoleGenerator struct {
 }
 
 type Config struct {
+	TerminalView     string
 	UISort           map[string]string
 	RoleGenerator    RoleGenerator
 	Tick             time.Duration
@@ -359,6 +360,11 @@ func (c *Config) setTop(key, value string) error {
 		c.RoleGenerator.Effort = value
 	case "role_generation_timeout":
 		return dur(&c.RoleGenerator.Timeout)
+	case "terminal_view":
+		if value != "brief" && value != "detailed" && value != "raw" {
+			return fmt.Errorf("terminal_view must be brief, detailed or raw")
+		}
+		c.TerminalView = value
 	case "tui_refresh":
 		return dur(&c.TUIRefresh)
 	case "tick":

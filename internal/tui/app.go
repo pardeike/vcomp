@@ -413,6 +413,30 @@ func (a *app) dispatch(act action) (bool, error) {
 		a.reload()
 	case "editor":
 		return false, a.edit()
+	case "terminal-verbosity":
+		mode := "brief"
+		switch a.m.Data.View.Config.TerminalView {
+		case "brief", "":
+			mode = "detailed"
+		case "detailed":
+			mode = "raw"
+		}
+		if err := config.UpdateLocal(root, []config.Override{{Key: "terminal_view", Value: mode}}); err != nil {
+			return false, err
+		}
+		a.m.Data.View.Config.TerminalView = mode
+		a.m.Scroll = 0
+		a.reload()
+	case "intervene-confirm":
+		if len(act.Values) == 0 || act.Values[0] == "" {
+			return false, fmt.Errorf("this employee has no session")
+		}
+		a.m.Confirm = &action{Kind: "attach", Values: act.Values}
+		back := "Ctrl-B, then d"
+		if os.Getenv("TMUX") != "" {
+			back = "Ctrl-B, then L"
+		}
+		a.m.Confirmation = "Enter interactive intervention? Keys go directly to the agent; Escape may interrupt it. Return to vcomp with " + back + "."
 	case "attach":
 		if len(act.Values) == 0 || act.Values[0] == "" {
 			return false, fmt.Errorf("this employee has no session")
@@ -423,7 +447,7 @@ func (a *app) dispatch(act action) (bool, error) {
 			if err != nil {
 				return false, fmt.Errorf("cannot switch tmux client: %s", strings.TrimSpace(string(b)))
 			}
-			a.m.Message = "Watching agent. Ctrl-B then L returns to the dashboard."
+			a.m.Message = "Interactive agent session. Ctrl-B then L returns to the dashboard."
 			return false, nil
 		}
 		return false, a.external(exec.Command("tmux", "attach-session", "-t", act.Values[0]))

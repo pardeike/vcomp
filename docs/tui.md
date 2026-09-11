@@ -94,13 +94,13 @@ observation, and terminal lifecycle. Real tmux fixtures exercise interaction wit
 | s / x / r | Start supervision / stop company / reset company |
 | c / o | Company settings / open another directory |
 | h / n | Hire an employee / create a public test |
-| a | Watch the selected agent in tmux |
+| a | Enter interactive intervention, after showing return instructions |
 | t / b / p | Selected agent's steering / replacement / harness and pacing settings |
 | e | Open the current editable document in `$EDITOR`, default `vi` |
 | ? / q | Help / leave the interface |
 
-When watching an agent, Ctrl-B then d detaches back to the TUI. When the TUI
-itself runs inside tmux, watching switches sessions; Ctrl-B then L returns.
+When intervening in an agent, Ctrl-B then d detaches back to the TUI. When the TUI
+itself runs inside tmux, intervention switches sessions; Ctrl-B then L returns.
 Generated role and goal documents are not edited through the viewer. Set a goal
 file in Settings to edit a multiline goal, and use steering for employee
 instructions. The full configuration remains available through the Settings
@@ -211,3 +211,25 @@ means impressions exist, not that the product passed. Wider terminals also
 show the attempt count and a literal excerpt from impressions or abandonment.
 Enter opens the full text and timestamp. macOS uses filesystem birth time;
 on other platforms `~` marks an estimate from directory modification time.
+
+## Passive terminal activity
+
+The Terminal tab defaults to a read-only activity feed from OMP's session
+records. It uses the viewer's width rather than copying OMP's narrower layout.
+Newest records appear first, with timestamps, tool calls, results and responses.
+The current turn's elapsed time and latest-record age are shown explicitly.
+When available, the live terminal's current-operation line is shown verbatim.
+An active generation may not be persisted yet; a quiet transcript does not prove
+that the agent has stopped or is thinking rather than waiting for inference.
+
+`v` cycles brief, detailed and raw views and saves `terminal_view` in this
+company's settings. Brief shows tool intents and the first line of messages and
+results. Detailed includes recorded arguments and full text, within the normal
+256 KiB display limit. Raw shows the captured terminal with its original layout.
+Harnesses without supported session records fall back to the raw capture.
+
+`a` is **intervene**, an interactive attachment for technical intervention.
+Before attaching, the interface explains that keys reach the agent and that
+Escape may interrupt it. Ctrl-B then d returns when attached from a regular
+terminal; Ctrl-B then L returns when vcomp itself is inside tmux. For ordinary
+observation, remain in the Terminal tab, where keystrokes never reach OMP.
