@@ -23,7 +23,10 @@ A tick loop (default 20s). Per tick:
    after their command exits (`remain-on-exit`), so a harness that dies on
    startup leaves its error behind to be read rather than being restarted
    forever in silence. A resume that fails before its first prompt is retried fresh; an established
-   conversation continues to use resume after later exits. After `max_restarts` failures the
+   conversation continues to use resume after later exits. Failures to create or launch a tmux pane are retried after
+   `launch_retry_delay` (default 1m), without consuming the harness crash allowance.
+   The error remains visible while waiting and clears when launch succeeds.
+   After `max_restarts` harness exits the
    role is marked broken, the command and the pane's last lines are logged
    once, and it is left alone until `role.md` or the settings change.
 6. **Nudge** — a session whose pane text is byte-identical for N consecutive

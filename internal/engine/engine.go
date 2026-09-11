@@ -32,11 +32,12 @@ type roleState struct {
 	Resumed      bool   `json:"resumed"` // the pending prompt is a welcome-back, not a hello
 	// Failure state is deliberately not persisted: restarting the engine is a
 	// person saying "try again", and it should not inherit an old verdict.
-	Fails    int    `json:"-"`
-	Broken   bool   `json:"-"`
-	LastErr  string `json:"-"`
-	PaneHash string `json:"-"`
-	Idle     int    `json:"-"`
+	LaunchRetryAt time.Time `json:"-"`
+	Fails         int       `json:"-"`
+	Broken        bool      `json:"-"`
+	LastErr       string    `json:"-"`
+	PaneHash      string    `json:"-"`
+	Idle          int       `json:"-"`
 }
 
 type runState struct {

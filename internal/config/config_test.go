@@ -275,3 +275,18 @@ func TestUpdateLocalKeepsUnansweredSettings(t *testing.T) {
 		t.Fatalf("settings lost: %+v", c)
 	}
 }
+
+func TestLaunchRetryDelay(t *testing.T) {
+	if Default().LaunchRetryDelay <= 0 {
+		t.Fatal("missing launch retry delay default")
+	}
+	for _, value := range []string{"0s", "-1s", "invalid"} {
+		if _, err := Parse("launch_retry_delay = " + value); err == nil {
+			t.Fatalf("accepted invalid retry delay %q", value)
+		}
+	}
+	c, err := Parse("launch_retry_delay = 7s")
+	if err != nil || c.LaunchRetryDelay.String() != "7s" {
+		t.Fatalf("retry delay override: %v, %v", c.LaunchRetryDelay, err)
+	}
+}

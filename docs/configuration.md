@@ -41,6 +41,14 @@ nothing; any value can still be typed.
 For the shipped CLI presets and local endpoint examples, see
 [CLI harnesses and local models](harnesses.md).
 
+## Launch recovery
+
+`launch_retry_delay = 1m` controls how long an employee waits after tmux fails
+to create or launch its pane. The engine retries on the first tick after that
+delay, showing the launch error while it waits. These failures do not consume
+`max_restarts`, which still limits repeated harness exits. The delay must be
+positive and is configured at the top level.
+
 ## Public tester model
 
 Public user tests have their own optional `[user]` section. For example, keep

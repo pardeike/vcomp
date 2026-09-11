@@ -739,3 +739,74 @@ func TestLegacyPidLockIsNotOverwritten(t *testing.T) {
 		t.Fatal("legacy owner record was overwritten")
 	}
 }
+
+func TestLaunchFailureRetriesWithoutBreakingRole(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		t.Run(fmt.Sprintf("resume=%t", resume), func(t *testing.T) {
+			_, harnessLog, e := company(t, "ceo", "")
+			if resume {
+				tick(t, e)
+				tick(t, e)
+				if err := tmux.Kill(e.Session("ceo")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			delegate, err := exec.LookPath("tmux")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bin := t.TempDir()
+			blocked := filepath.Join(bin, "blocked")
+			attempts := filepath.Join(bin, "attempts")
+			if err := os.WriteFile(blocked, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			// Fail the exact operation from the live incident; all other tmux
+			// operations, including placeholder cleanup, use the real test server.
+			script := fmt.Sprintf(`#!/bin/sh
+if [ "$1" = respawn-pane ]; then
+  echo attempt >> %q
+  if [ -f %q ]; then
+    echo 'respawn pane failed: fork failed: Device not configured' >&2
+    exit 1
+  fi
+fi
+exec %q "$@"
+`, attempts, blocked, delegate)
+			if err := os.WriteFile(filepath.Join(bin, "tmux"), []byte(script), 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			for i := 0; i <= e.cfg.MaxRestarts; i++ {
+				if s := e.st.Roles["ceo"]; s != nil {
+					s.LaunchRetryAt = time.Now().Add(-time.Second)
+				}
+				tick(t, e)
+				s := e.st.Roles["ceo"]
+				if s.Broken || !s.LaunchRetryAt.After(time.Now()) || !strings.Contains(s.LastErr, "Device not configured") {
+					t.Fatalf("launch failure did not schedule recovery: %+v", s)
+				}
+				if tmux.Exists(prefix + "-ceo") {
+					t.Fatal("failed launch leaked its placeholder session")
+				}
+				before := read(t, attempts)
+				tick(t, e)
+				if read(t, attempts) != before {
+					t.Fatal("launch retried before its delay expired")
+				}
+			}
+			if err := os.Remove(blocked); err != nil {
+				t.Fatal(err)
+			}
+			s := e.st.Roles["ceo"]
+			s.LaunchRetryAt = time.Now().Add(-time.Second)
+			tick(t, e)
+			if !tmux.Alive(e.Session("ceo")) || s.Broken || s.LastErr != "" || !s.LaunchRetryAt.IsZero() || s.Resumed != resume {
+				t.Fatalf("launch did not recover correctly: %+v", s)
+			}
+			if resume && !strings.Contains(read(t, harnessLog), "resume ") {
+				t.Fatal("recovered launch lost conversation resumption")
+			}
+		})
+	}
+}

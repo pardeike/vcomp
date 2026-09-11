@@ -83,13 +83,14 @@ type Role struct {
 }
 
 type Config struct {
-	Tick            time.Duration
-	TUIRefresh      time.Duration
-	IdleTicks       int
-	IdleTicksEmpty  int
-	UserTimeout     time.Duration
-	UserMaxAttempts int
-	MaxRestarts     int
+	Tick             time.Duration
+	TUIRefresh       time.Duration
+	IdleTicks        int
+	IdleTicksEmpty   int
+	UserTimeout      time.Duration
+	UserMaxAttempts  int
+	MaxRestarts      int
+	LaunchRetryDelay time.Duration
 
 	SessionPrefix       string
 	CEOInstructionsFile string
@@ -339,6 +340,8 @@ func (c *Config) setTop(key, value string) error {
 		return num(&c.IdleTicksEmpty)
 	case "user_max_attempts":
 		return num(&c.UserMaxAttempts)
+	case "launch_retry_delay":
+		return dur(&c.LaunchRetryDelay)
 	case "max_restarts":
 		return num(&c.MaxRestarts)
 	case "session_prefix":

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 	"vcomp/internal/bootstrap"
 
 	"vcomp/internal/config"
@@ -77,6 +78,7 @@ func (e *Engine) syncRole(r space.Role) {
 	hash := space.Hash(settings)
 	if hash != s.SettingsHash {
 		s.Fails, s.Broken = 0, false
+		s.LaunchRetryAt = time.Time{}
 		s.SettingsHash = hash
 	}
 	if pane.Dead || !pane.Exists && s.Session != "" {
@@ -89,6 +91,9 @@ func (e *Engine) syncRole(r space.Role) {
 		return
 	}
 	if !pane.Exists {
+		if time.Now().Before(s.LaunchRetryAt) {
+			return
+		}
 		e.hire(r, s)
 		return
 	}
@@ -156,11 +161,11 @@ func (e *Engine) hire(r space.Role, s *roleState) {
 	next.NeedShake = len(e.cfg.Handshake(r.Name)) > 0
 	next.Idle, next.PaneHash = 0, ""
 	if err := tmux.New(next.Session, r.Dir, cmd, e.metadata("role", r.Name, &next)); err != nil {
-		e.roleError(r.Name, s, err)
-		s.Fails++
-		s.Broken = s.Fails >= e.cfg.MaxRestarts
+		s.LaunchRetryAt = time.Now().Add(e.cfg.LaunchRetryDelay)
+		e.roleError(r.Name, s, fmt.Errorf("%w; retrying after %s", err, e.cfg.LaunchRetryDelay))
 		return
 	}
+	next.LaunchRetryAt, next.LastErr = time.Time{}, ""
 	*s = next
 	verb := "hired"
 	if resume {
