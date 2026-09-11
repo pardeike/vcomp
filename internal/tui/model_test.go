@@ -546,7 +546,7 @@ func TestDashboardTurnsTopicsAndRecentCommits(t *testing.T) {
 		rows := m.render(size[0], size[1])
 		text := draw(rows, false)
 		if size[0] >= 140 {
-			for _, want := range []string{"Turns", "Started", "Avg turn", "10:24:03", "2m18s", "add-casting-animation", "fix-line-tension", "Draw lake scene"} {
+			for _, want := range []string{"Turns", "Started", "Avg", "10:24:03", "2m18s", "add-casting-animation", "fix-line-tension", "Draw lake scene"} {
 				if !strings.Contains(text, want) {
 					t.Errorf("size %v missing %q", size, want)
 				}
@@ -555,13 +555,47 @@ func TestDashboardTurnsTopicsAndRecentCommits(t *testing.T) {
 				t.Fatal("repeated timing labels in rows")
 			}
 		}
-		if size[0] <= 60 && strings.Contains(text, "Avg turn") {
+		if size[0] <= 60 && strings.Contains(text, "Avg") {
 			t.Fatal("timing columns crowded narrow layout")
 		}
 		for _, r := range rows {
 			if width(r.Text) > size[0] {
 				t.Fatalf("overflow at %v: %q", size, r.Text)
 			}
+		}
+	}
+}
+
+func TestDashboardTimingUsesNarrowScreenSpace(t *testing.T) {
+	m := fixture()
+	m.Data.View.Agents[0].Name = "mechanical-engineer"
+	m.Data.View.Agents[0].Turns = engine.TurnStats{Known: true, Completed: 8,
+		Started: time.Date(2026, 9, 11, 10, 24, 3, 0, time.Local), Average: 138 * time.Second}
+	for _, tc := range []struct {
+		width                   int
+		turns, started, average bool
+	}{
+		{46, false, false, false}, {47, true, false, false},
+		{55, true, false, false}, {56, true, true, false},
+		{63, true, true, false}, {64, true, true, true},
+	} {
+		rows := m.dashboard(tc.width, 30)
+		header := rows[2].Text
+		for _, column := range []struct {
+			name string
+			want bool
+		}{{"Turns", tc.turns}, {"Started", tc.started}, {"Avg", tc.average}} {
+			if strings.Contains(header, column.name) != column.want {
+				t.Fatalf("width %d: %s visibility in %q", tc.width, column.name, header)
+			}
+		}
+		if tc.width == 64 {
+			if !strings.Contains(rows[3].Text, "10:24:03") || !strings.Contains(rows[3].Text, "2m18s") {
+				t.Fatalf("timing values missing: %q", rows[3].Text)
+			}
+		}
+		if width(rows[3].Text) > tc.width {
+			t.Fatalf("row overflow: %q", rows[3].Text)
 		}
 	}
 }

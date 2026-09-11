@@ -336,20 +336,30 @@ func (m *model) dashboard(w, h int) []row {
 	for _, a := range m.Data.View.Agents {
 		nameW = min(24, max(nameW, width(a.Name)))
 	}
-	// Keep a useful output preview on wide screens while giving timing columns
-	// space when both panels fit. Narrow screens retain the existing layout.
-	turnWidth := 3 + nameW + 2 + 9 + 2 + 5 + 16 + 28
-	if wide && w >= turnWidth+1+3+40 {
-		listW = max(listW, turnWidth+1)
+	// Timing takes priority over CLI/idle. Add each column independently so
+	// smaller terminals use their spare cells instead of hiding the whole set.
+	baseWidth := 3 + nameW + 2 + 9 + 2 + 5
+	fullWidth := baseWidth + 23 + 16
+	if wide && w >= fullWidth+1+3+40 {
+		listW = max(listW, fullWidth+1)
 	}
-	showTurns := listW >= turnWidth+1
-	showLastLine := listW >= 85 && !showTurns
+	showTurns := listW >= baseWidth+6+1
+	showStarted := listW >= baseWidth+15+1
+	showAverage := listW >= baseWidth+23+1
+	showCLI := listW >= fullWidth+1
+	showLastLine := listW >= fullWidth+18+1
 	header := "   " + pad("Agent", nameW) + "  " + pad("State", 9) + "  Inbox"
-	if listW >= 70 {
+	if showCLI {
 		header += "  " + pad("CLI", 8) + "  Idle"
 	}
 	if showTurns {
-		header += fmt.Sprintf("  %5s  %-8s  %9s", "Turns", "Started", "Avg turn")
+		header += fmt.Sprintf(" %5s", "Turns")
+	}
+	if showStarted {
+		header += fmt.Sprintf(" %-8s", "Started")
+	}
+	if showAverage {
+		header += fmt.Sprintf(" %7s", "Avg")
 	}
 	if showLastLine {
 		header += "  Last line"
@@ -359,7 +369,7 @@ func (m *model) dashboard(w, h int) []row {
 	for i := start; i < min(m.count(), start+listH); i++ {
 		a := m.Data.View.Agents[i]
 		cells := []span{{pad(a.Name, nameW) + "  ", ""}, {pad(a.State, 9), stateStyle(a.State)}, {fmt.Sprintf("  %5d", a.Inbox), ""}}
-		if listW >= 70 {
+		if showCLI {
 			cells = append(cells, span{fmt.Sprintf("  %s  %4d", pad(a.Harness, 8), a.Idle), ""})
 		}
 		if showTurns {
@@ -373,7 +383,13 @@ func (m *model) dashboard(w, h int) []row {
 					average = a.Turns.Average.Round(time.Second).String()
 				}
 			}
-			cells = append(cells, span{fmt.Sprintf("  %5s  %-8s  %9s", clip(count, 5), started, clip(average, 9)), dim})
+			cells = append(cells, span{fmt.Sprintf(" %5s", clip(count, 5)), dim})
+			if showStarted {
+				cells = append(cells, span{fmt.Sprintf(" %-8s", started), dim})
+			}
+			if showAverage {
+				cells = append(cells, span{fmt.Sprintf(" %7s", clip(average, 7)), dim})
+			}
 		}
 		if showLastLine {
 			lines := strings.Split(strings.TrimSpace(clean(a.Output)), "\n")

@@ -126,8 +126,8 @@ edit, and shell tools. That small check is not evidence for a whole company run.
 
 ## Dashboard progress
 
-When the role table has enough width, it adds `Turns`, `Started`, and `Avg turn`
-columns. `Turns` counts completed prompt-to-final-response assignments in the
+As width becomes available, the role table progressively adds `Turns`, `Started`, and `Avg`
+columns, prioritizing them over CLI and idle counts. `Turns` counts completed prompt-to-final-response assignments in the
 current OMP conversation. Thinking, tool calls, automatic model retries, and
 server queue time belong to that assignment. `Started` is the active turn's
 local start time, with no repeated label in individual rows. The average uses
