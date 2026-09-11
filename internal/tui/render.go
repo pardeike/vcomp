@@ -196,7 +196,11 @@ func (m *model) footer(w, h int) row {
 		if m.Form.Editing {
 			return hints(w, size, "Enter", "done", "Ctrl-U", "clear", "Ctrl-S", "save", "Esc", "stop editing")
 		}
-		return hints(w, size, "Tab / ↑↓", "field", "Ctrl-S", "save", "Esc", "cancel")
+		verb := "save"
+		if m.Form.Kind == "direct-steer" || m.Form.Kind == "message" {
+			verb = "send"
+		}
+		return hints(w, size, "Tab / ↑↓", "field", "Ctrl-S", verb, "Esc", "cancel")
 	case m.Detail == "profession-draft":
 		return hints(w, size, "e", "edit draft", "s", "save", "↑↓", "scroll", "Esc", "back")
 	case m.Detail == "profession":

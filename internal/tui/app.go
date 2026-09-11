@@ -340,7 +340,7 @@ func (a *app) dispatch(act action) (bool, error) {
 		}
 		title := "Direct steer to " + name
 		if act.Kind == "broadcast-form" {
-			name = "*"
+			name = "All running employees"
 			title = "Broadcast to all running employees (including CEO; excluding public testers)"
 		}
 		if name == "" {
@@ -354,7 +354,7 @@ func (a *app) dispatch(act action) (bool, error) {
 	case "direct-steer":
 		a.work(act.Kind, func() (string, error) {
 			args := []string{"direct-steer", "-mode", act.Values[1], "-text", act.Values[2]}
-			if act.Values[0] == "*" {
+			if act.Values[0] == "All running employees" {
 				args = append(args, "-all")
 			} else {
 				args = append(args, act.Values[0])

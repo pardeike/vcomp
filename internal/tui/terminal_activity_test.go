@@ -85,7 +85,7 @@ func TestDirectSteerAndBroadcastActions(t *testing.T) {
 	if _, err := a.dispatch(action{Kind: "broadcast-form"}); err != nil {
 		t.Fatal(err)
 	}
-	if a.m.Form.Fields[0].Value != "*" {
+	if a.m.Form.Fields[0].Value != "All running employees" {
 		t.Fatal("not a broadcast")
 	}
 }
