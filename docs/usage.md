@@ -93,7 +93,9 @@ and asks before doing it.
 and writable - `~/Scripts`, `~/bin`, `~/.local/bin`, `/usr/local/bin`,
 `/opt/homebrew/bin`, in that order, preferring user-owned ones so nothing needs
 sudo - then runs `vcomp install` to populate `~/.vcomp/`. `BIN_DIR=… ./install.sh`
-overrides the choice.
+overrides the choice. The script verifies that the installed CLI runs and prints
+only `ok` on success. On failure it reports the step, concise diagnostics, and
+the full log at `.vcomp/logs/install.log` in the source checkout.
 
 ## Scripted profession management
 

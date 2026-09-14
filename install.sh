@@ -15,6 +15,41 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 
+# Keep routine output in one ignored log, including failures from child commands.
+mkdir -p "$here/.vcomp/logs"
+log="$here/.vcomp/logs/install.log"
+exec 3>&1
+exec >"$log" 2>&1
+step="select install directory"
+finish() {
+    result=$?
+    trap - EXIT
+    if [ "$result" -eq 0 ]; then
+        echo ok >&3
+    else
+        echo "failed: $step (exit $result); full log: $log" >&3
+        tail -n 15 "$log" >&3
+    fi
+    exit "$result"
+}
+trap finish EXIT
+child=
+run() {
+    "$@" &
+    child=$!
+    wait "$child"
+    child=
+}
+cancel() {
+    if [ -n "$child" ]; then
+        kill -TERM "$child" 2>/dev/null || :
+        wait "$child" 2>/dev/null || :
+    fi
+    exit "$1"
+}
+trap 'cancel 130' INT
+trap 'cancel 143' TERM
+
 candidates="$HOME/Scripts $HOME/bin $HOME/.local/bin /usr/local/bin /opt/homebrew/bin"
 
 on_path() {
@@ -37,10 +72,16 @@ pick_dir() {
 bin=${BIN_DIR:-$(pick_dir || echo "$HOME/.local/bin")}
 mkdir -p "$bin"
 
-(cd "$here" && go build -o "$bin/vcomp" ./cmd/vcomp)
+step="build binary"
+cd "$here"
+run go build -o "$bin/vcomp" ./cmd/vcomp
 echo "installed $bin/vcomp"
 
-"$bin/vcomp" install "$@"
+step="install settings and templates"
+run "$bin/vcomp" install "$@"
+
+step="verify installed binary"
+run "$bin/vcomp" --help
 
 # A second copy left on the PATH is worse than none: shells hash the path they
 # first resolved, so an old build can keep running long after this one lands.

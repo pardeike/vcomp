@@ -60,7 +60,10 @@ wasteful.
 Finish each piece of work by committing it and then running `./install.sh`. The
 installed binary is what gets used from a company directory, so a commit that is
 not deployed means the next test run exercises the previous version - which is
-its own species of confusing bug.
+its own species of confusing bug. `./install.sh` is the canonical delivery
+command: build, install settings/templates, and verify the installed CLI. It
+prints only `ok` on success; failures name the step and show diagnostics. Full
+output is kept in the ignored `.vcomp/logs/install.log`.
 
 ## Testing
 

@@ -31,6 +31,9 @@ not, with exactly one exception: their inbox.
 
 ## Messaging
 
+You have no outbox; do not create one. Send messages directly to the recipient's
+inbox.
+
 To send a message to an existing employee, use
 `<company-root>/spaces/<employee-name>/inbox/<topic>/message.md`.
 From your own space, that is:
@@ -59,7 +62,10 @@ an answer that may never come — chase it, or route around the person.
 
 ## Your inbox
 
-Check `inbox/` often. For each topic folder: read it, then either act on it or
+Your inbox is `<company-root>/spaces/<your-name>/inbox/`, or `./inbox/`
+from your own space. Check it often. Consider taking care of waiting items
+before looking elsewhere for work, while using your judgment about priorities.
+For each topic folder: read it, then either act on it or
 decide not to — and in both cases **delete the folder** when you are done with
 it. A message you have handled and left lying around is noise. An inbox that
 grows without bound means you are not doing your job, and it is visible to
